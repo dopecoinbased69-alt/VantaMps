@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Industrial Nexus | AI Facility Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-panel: #111111;
+            --accent: #3b82f6;
+            --text-main: #e5e7eb;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-main); color: var(--text-main); margin: 0; }
+        .font-mono { font-family: 'Fira Code', monospace; }
+        .glass-panel { background: rgba(17, 17, 17, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .glass-input { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(10px); }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        
+        .viewport-bg { 
+            background: linear-gradient(135deg, #13151a 0%, #08090a 100%);
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+            outline: none;
+        }
+
+        /* UI States */
+        .hierarchy-item { border-left: 2px solid transparent; }
+        .hierarchy-item.hovered { background: rgba(59, 130, 246, 0.1); border-left-color: rgba(59, 130, 246, 0.5); }
+        .hierarchy-item.selected { background: rgba(59, 130, 246, 0.15); border-left-color: var(--accent); }
+    </style>
+    
+    <!-- Import Maps -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "@tweenjs/tween.js": "https://unpkg.com/@tweenjs/tween.js@23.1.1/dist/tween.esm.js"
+            }
+        }
+    </script>
+</head>
+<body class="h-screen overflow-hidden flex flex-col selection:bg-blue-500/30">
+
+    <!-- Top Navigation -->
+    <header class="h-14 flex items-center justify-between px-6 glass-panel z-20 relative shadow-xl border-b border-white/10">
+        <div class="flex items-center gap-4">
+            <div class="w-6 h-6 bg-gradient-to-br from-blue-400 to-blue-700 rounded-sm shadow-[0_0_15px_rgba(59,130,246,0.4)] flex items-center justify-center">
+                <div class="w-2.5 h-2.5 bg-black rounded-full"></div>
+            </div>
+            <h1 class="text-sm font-semibold tracking-wide text-white">FACILITY BUILDER <span class="text-gray-600 font-light mx-2">/</span> <span class="text-xs font-normal text-gray-400">Generative Space</span></h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 text-[10px] text-gray-400 font-mono uppercase tracking-widest bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
+                <span class="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_5px_#a855f7] animate-pulse"></span> Gemini AI Active
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        
+        <!-- Left Sidebar: Outliner -->
+        <aside class="w-full md:w-[260px] h-[30vh] md:h-full flex flex-col glass-panel border-r border-gray-800/50 z-10 flex-shrink-0">
+            <div class="px-4 py-3 border-b border-white/5 bg-black/40">
+                <h2 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Facility Components</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto scrollbar-hide p-2" id="ui-hierarchy">
+                <!-- Populated via JS -->
+            </div>
+        </aside>
+
+        <!-- Center: 3D Viewport -->
+        <section class="flex-1 relative viewport-bg flex items-center justify-center overflow-hidden">
+            <div id="canvas-container"></div>
+
+            <div class="absolute top-4 left-4 z-20 flex gap-2">
+                <button class="bg-black/60 backdrop-blur border border-gray-700/50 rounded px-3 py-1.5 text-gray-400 text-xs hover:text-white hover:bg-white/10 transition-colors shadow-lg" onclick="appEngine.resetCamera()">
+                    Reset View
+                </button>
+            </div>
+
+            <!-- Contextual Tooltip -->
+            <div id="viewport-tooltip" class="absolute hidden bg-blue-900/90 border border-blue-500/50 text-white text-xs px-3 py-1.5 rounded pointer-events-none z-30 shadow-[0_4px_20px_rgba(0,0,0,0.5)] transform -translate-x-1/2 -translate-y-[150%] flex items-center gap-2">
+                <span id="tooltip-name" class="font-semibold">Object</span>
+                <span id="tooltip-action" class="text-[9px] uppercase tracking-widest text-blue-300 bg-black/30 px-1.5 py-0.5 rounded ml-1 hidden">Click to Interact</span>
+            </div>
+
+            <!-- AI Prompt Bar -->
+            <div class="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-[90%] max-w-2xl z-20">
+                <div class="glass-input rounded-full p-1.5 flex items-center shadow-[0_10px_40px_rgba(0,0,0,0.5)] border border-white/10 relative overflow-hidden transition-all focus-within:border-blue-500/50">
+                    <div id="ai-loading-bar" class="absolute bottom-0 left-0 h-[2px] bg-gradient-to-r from-blue-500 to-purple-500 w-0 transition-all duration-300"></div>
+                    <div class="pl-4 text-purple-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    </div>
+                    <input type="text" id="ai-prompt" placeholder="Generate a warehouse prop... (e.g., 'Add a blue shipping container on the right')" class="flex-1 bg-transparent border-none outline-none text-sm px-3 py-2 text-white placeholder-gray-500 font-mono focus:ring-0">
+                    <button id="ai-submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold tracking-wide rounded-full transition-colors flex items-center gap-2">
+                        Generate
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Sidebar: Properties Inspector -->
+        <aside class="w-full md:w-[300px] h-[30vh] md:h-full flex flex-col glass-panel border-l border-gray-800/50 z-10 flex-shrink-0">
+            <div class="px-4 py-3 border-b border-white/5 bg-black/40">
+                <h2 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">System Inspector</h2>
+            </div>
+            
+            <div id="inspector-empty" class="flex-1 flex items-center justify-center text-xs text-gray-600 p-6 text-center">
+                Select a component to view properties.
+            </div>
+
+            <div id="inspector-content" class="flex-1 overflow-y-auto scrollbar-hide hidden flex flex-col">
+                <div class="p-5 space-y-6 flex-1">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <div id="prop-status-indicator" class="w-2 h-2 rounded-full bg-gray-500"></div>
+                            <h3 class="text-white text-sm font-semibold" id="prop-name">Component Name</h3>
+                        </div>
+                        <p class="text-[10px] text-gray-400 font-mono uppercase tracking-widest" id="prop-type">Type: ---</p>
+                    </div>
+
+                    <!-- Dynamic Controls (For doors) -->
+                    <div id="prop-controls" class="hidden space-y-3 p-4 bg-blue-900/10 border border-blue-500/20 rounded-lg">
+                        <h4 class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Actuation Control</h4>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-gray-300" id="prop-door-status">Status: Closed</span>
+                            <button id="btn-toggle-door" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded shadow transition-colors">
+                                Toggle Door
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Static Details -->
+                    <div class="space-y-3">
+                        <h4 class="text-[10px] font-bold text-gray-600 uppercase tracking-widest border-b border-gray-800 pb-1">Specifications</h4>
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div class="text-gray-500">Material</div>
+                            <div class="text-gray-300 font-mono text-right" id="prop-mat">Unknown</div>
+                            
+                            <div class="text-gray-500">Integrity</div>
+                            <div class="text-green-400 font-mono text-right">100%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as TWEEN from '@tweenjs/tween.js';
+
+        // --- Core Dependencies ---
+        const apiKey = ""; // Execution environment injects this key
+        
+        // --- Utilities ---
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const colors = type === 'error' ? 'bg-red-900/90 border-red-500 text-red-200' : 'bg-blue-900/90 border-blue-500 text-blue-200';
+            toast.className = `px-5 py-2.5 rounded shadow-[0_10px_30px_rgba(0,0,0,0.5)] border text-xs font-mono transition-opacity duration-300 opacity-0 ${colors}`;
+            toast.innerText = message;
+            container.appendChild(toast);
+            
+            setTimeout(() => toast.classList.remove('opacity-0'), 10);
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // --- AI API Logic ---
+        async function fetchWithRetry(url, options, retries = 5) {
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return await response.json();
+                } catch (err) {
+                    if (i === retries - 1) throw err;
+                    await new Promise(r => setTimeout(r, delays[i]));
+                }
+            }
+        }
+
+        async function generateWithAI(prompt) {
+            const sysPrompt = `You are a 3D warehouse-prop generator. Convert the user prompt into a JSON object for rendering inside an existing industrial warehouse scene.
+Allowed "type" values:
+  "box"              — a plain box (crate, pallet lid, block)
+  "cylinder"         — pipe / bollard / small tank
+  "sphere"           — dome / ball
+  "container"        — a 6m × 2.5m × 2.4m shipping container (colour comes from material)
+  "drum"             — a 55-gallon oil drum with a green band around it
+  "pallet_stack"     — a wooden pallet with a stack of crates on top
+  "hanging_target"   — a bullseye plate hanging between two poles
+  "crate"            — a single wooden crate
+Allowed "material" values: "concrete", "steel", "steelLight", "glass", "warningYellow", "doorRed", "blue", "containerRed", "containerBlue", "wood", "grate", "drumBody", "drumTop", "bullseye".
+The warehouse floor is at y=0, interior spans roughly X∈[-15, 15], Z∈[-40, 5]. Place ground props near y=1. Place mezzanine props near y=7. Left = -X, Right = +X, Front = +Z, Back = -Z.
+Size should be modest (0.5 – 3 units for boxes, containers are fixed size). Prefer positions inside the warehouse.
+Respond ONLY with a valid JSON object matching this exact schema: {"name":"str","type":"str","material":"str","position":[x,y,z],"scale":[x,y,z]}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: sysPrompt }] },
+                generationConfig: { responseMimeType: "application/json" }
+            };
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const data = await fetchWithRetry(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error("Invalid API response");
+            return JSON.parse(text);
+        }
+
+        // Warehouse-aware fallback parser (used when the Gemini call
+        // fails or is offline). Recognises the tactical-app vocabulary
+        // — container, drum, pallet, hanging target, crate — so the
+        // offline experience produces the same warehouse-style props.
+        function fallbackParser(prompt) {
+            const text = prompt.toLowerCase();
+
+            // --- Type detection (warehouse props first, primitives last) ---
+            let type = "box";
+            if (text.match(/container|cargo|shipping/))            type = "container";
+            else if (text.match(/drum|barrel/))                    type = "drum";
+            else if (text.match(/pallet.*(stack|crate)|stack.*pallet|pallet$|palette$/)) type = "pallet_stack";
+            else if (text.match(/hanging.*target|bullseye|target/)) type = "hanging_target";
+            else if (text.match(/crate|box.*wood|wooden.*box/))    type = "crate";
+            else if (text.match(/cylinder|pipe|tank|tube|bollard/)) type = "cylinder";
+            else if (text.match(/sphere|ball|orb|dome/))          type = "sphere";
+
+            // --- Material detection ---
+            let material = "steel";
+            if (type === "container")      material = text.includes("blue") ? "containerBlue" : "containerRed";
+            else if (type === "drum")      material = "drumBody";
+            else if (type === "pallet_stack" || type === "crate") material = "wood";
+            else if (type === "hanging_target") material = "bullseye";
+            else {
+                if (text.match(/concrete|stone|wall/))    material = "concrete";
+                if (text.match(/yellow|warning|caution/)) material = "warningYellow";
+                if (text.match(/red|door/))               material = "doorRed";
+                if (text.match(/glass|window/))           material = "glass";
+                if (text.match(/blue/))                   material = "blue";
+                if (text.match(/wood|wooden|plank/))      material = "wood";
+            }
+
+            // --- Position inside the warehouse ---
+            let x = (Math.random() - 0.5) * 20;
+            let y = 1 + Math.random() * 0.5;
+            let z = -10 - Math.random() * 20;
+            if (text.includes("left"))   x = -10 - Math.random() * 3;
+            if (text.includes("right"))  x =  10 + Math.random() * 3;
+            if (text.includes("front") || text.includes("near")) z = 0 - Math.random() * 5;
+            if (text.includes("back")  || text.includes("far"))  z = -30 - Math.random() * 8;
+            if (text.includes("top") || text.includes("mezz") || text.includes("upper") || text.includes("catwalk")) y = 7;
+
+            return {
+                name: `${type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ')}`,
+                type, material,
+                position: [x, y, z],
+                scale: [1, 1, 1]
+            };
+        }
+
+        // --- Procedural texture helpers (ported from the tactical-app
+        //     warehouse builder so this app renders in the same style).
+        function makeCorrugatedTexture(hi, lo) {
+            const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+            const ctx = c.getContext('2d');
+            const grd = ctx.createLinearGradient(0, 0, 0, 128);
+            for (let i = 0; i <= 16; i++) grd.addColorStop(i / 16,
+                i % 2 === 0 ? `#${hi.toString(16).padStart(6,'0')}`
+                            : `#${lo.toString(16).padStart(6,'0')}`);
+            ctx.fillStyle = grd; ctx.fillRect(0, 0, 128, 128);
+            ctx.fillStyle = '#20232a';
+            for (let y = 8; y < 128; y += 16) {
+                ctx.beginPath(); ctx.arc(4,  y, 1.2, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(124, y, 1.2, 0, Math.PI * 2); ctx.fill();
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(6, 3);
+            return tex;
+        }
+        function makeGrateTexture() {
+            const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#2a2d33'; ctx.fillRect(0, 0, 64, 64);
+            ctx.fillStyle = '#5a5f66';
+            for (let x = 0; x < 64; x += 8) ctx.fillRect(x, 0, 3, 64);
+            for (let y = 0; y < 64; y += 8) ctx.fillRect(0, y, 64, 3);
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(6, 6);
+            return tex;
+        }
+        function makePlankTexture() {
+            const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#7a5a30'; ctx.fillRect(0, 0, 128, 128);
+            for (let y = 0; y < 128; y += 16) {
+                ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(0, y, 128, 1);
+                for (let i = 0; i < 6; i++) {
+                    ctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.08})`;
+                    ctx.fillRect(Math.random() * 128, y + 2 + Math.random() * 12, 30 + Math.random() * 40, 1);
+                }
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(2, 2);
+            return tex;
+        }
+        function makeContainerTexture(baseHex) {
+            const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = `#${baseHex.toString(16).padStart(6,'0')}`; ctx.fillRect(0, 0, 128, 128);
+            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            for (let x = 0; x < 128; x += 8) ctx.fillRect(x, 0, 2, 128);
+            ctx.fillStyle = 'rgba(20,10,5,0.5)';
+            for (let i = 0; i < 8; i++) {
+                const rx = Math.random() * 128;
+                ctx.fillRect(rx, Math.random() * 128, 1, 15 + Math.random() * 30);
+            }
+            return new THREE.CanvasTexture(c);
+        }
+        function makeBullseyeTexture() {
+            const c = document.createElement('canvas'); c.width = c.height = 512;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 512, 512);
+            const rings = 5, step = 240 / rings;
+            for (let i = 0; i < rings; i++) {
+                ctx.beginPath(); ctx.arc(256, 256, 240 - i * step, 0, Math.PI * 2);
+                ctx.fillStyle = i % 2 === 0 ? '#c22626' : '#f4f4f4'; ctx.fill();
+            }
+            return new THREE.CanvasTexture(c);
+        }
+
+        // --- Materials Library ---
+        // Original entries kept (concrete, steel, glass, warningYellow,
+        // doorRed, blue) so existing AI outputs still resolve. New
+        // entries mirror the tactical-app warehouse palette.
+        const Materials = {
+            concrete:      new THREE.MeshStandardMaterial({ color: 0x8a8d8f, roughness: 0.9, metalness: 0.1 }),
+            concreteDark:  new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.95, metalness: 0.05 }),
+            steel:         new THREE.MeshStandardMaterial({ color: 0x4a4d52, roughness: 0.5, metalness: 0.7 }),
+            steelLight:    new THREE.MeshStandardMaterial({ color: 0x70747a, roughness: 0.5, metalness: 0.6 }),
+            glass:         new THREE.MeshPhysicalMaterial({ color: 0x111827, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.6 }),
+            warningYellow: new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.6, metalness: 0.3 }),
+            doorRed:       new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.7, metalness: 0.2 }),
+            blue:          new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.4, metalness: 0.6 }),
+
+            // Tactical warehouse palette
+            corrugated:    new THREE.MeshStandardMaterial({ color: 0x60656c, roughness: 0.65, metalness: 0.45, map: makeCorrugatedTexture(0x8a8f96, 0x555a61) }),
+            corrugatedDoor:new THREE.MeshStandardMaterial({ color: 0x6b7076, roughness: 0.5,  metalness: 0.6, map: makeCorrugatedTexture(0x8a8f96, 0x4a4f56) }),
+            grate:         new THREE.MeshStandardMaterial({ color: 0x4a4d52, roughness: 0.7,  metalness: 0.7, map: makeGrateTexture() }),
+            trim:          new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.4,  metalness: 0.8 }),
+            rail:          new THREE.MeshStandardMaterial({ color: 0xf2c500, roughness: 0.55, metalness: 0.6 }),
+            wood:          new THREE.MeshStandardMaterial({ color: 0x8a6b3f, roughness: 0.9,  metalness: 0.05, map: makePlankTexture() }),
+            containerRed:  new THREE.MeshStandardMaterial({ color: 0x8a2a25, roughness: 0.75, metalness: 0.4, map: makeContainerTexture(0xa53230) }),
+            containerBlue: new THREE.MeshStandardMaterial({ color: 0x22415e, roughness: 0.75, metalness: 0.4, map: makeContainerTexture(0x2e5378) }),
+            drumBody:      new THREE.MeshStandardMaterial({ color: 0x3c3f45, roughness: 0.55, metalness: 0.7 }),
+            drumTop:       new THREE.MeshStandardMaterial({ color: 0x28e07a, roughness: 0.4,  metalness: 0.5, emissive: 0x0b6b3a, emissiveIntensity: 0.15 }),
+            bullseye:      new THREE.MeshStandardMaterial({ map: makeBullseyeTexture(), roughness: 0.6 }),
+            paint:         new THREE.MeshStandardMaterial({ color: 0xd4d4d4, roughness: 0.7 }),
+            dummy:         new THREE.MeshStandardMaterial({ color: 0x8a5a3b, roughness: 0.85 }),
+
+            invisible:     new THREE.MeshBasicMaterial({ visible: false })
+        };
+
+        // --- Scene Data Registry ---
+        const sceneRegistry = {};
+
+        function registerEntity(id, name, type, meshGroup, materialName, interactable = false, toggleFunc = null) {
+            sceneRegistry[id] = { id, name, type, meshGroup, materialName, interactable, toggleFunc, isOpen: false };
+            
+            // Add interaction hitbox logic
+            if (interactable && meshGroup) {
+                const bbox = new THREE.Box3().setFromObject(meshGroup);
+                const size = bbox.getSize(new THREE.Vector3());
+                const center = meshGroup.worldToLocal(bbox.getCenter(new THREE.Vector3()));
+                
+                const hitMesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), Materials.invisible);
+                hitMesh.position.copy(center);
+                hitMesh.userData = { id: id };
+                meshGroup.add(hitMesh);
+            } else if (meshGroup) {
+                meshGroup.traverse((child) => {
+                    if (child.isMesh && child.material !== Materials.invisible) child.userData = { id: id };
+                });
+            }
+        }
+
+        // --- Application State ---
+        const AppState = {
+            hoveredId: null, selectedId: null, listeners: [],
+            update(newState) { Object.assign(this, newState); this.notify(); },
+            subscribe(listener) { this.listeners.push(listener); },
+            notify() { this.listeners.forEach(fn => fn(this)); }
+        };
+
+        // --- 3D Engine ---
+        class Engine3D {
+            constructor(containerId) {
+                this.container = document.getElementById(containerId);
+                
+                this.initScene();
+                this.initLighting();
+                this.initEnvironment();
+                this.buildFacility();
+                this.initInteraction();
+                
+                this.animate = this.animate.bind(this);
+                window.addEventListener('resize', () => this.onWindowResize());
+                requestAnimationFrame(this.animate);
+            }
+
+            initScene() {
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.Fog(0x13151a, 30, 150);
+                this.camera = new THREE.PerspectiveCamera(45, this.container.clientWidth / this.container.clientHeight, 0.1, 500);
+                // Camera framing tuned for the warehouse interior:
+                // stands just inside the front doors, looking down the
+                // range past the hanging bullseye targets, oil drums,
+                // pallet stacks, up to the mezzanine + shipping
+                // containers at the back. Mirrors the tactical app's
+                // player-eye framing.
+                this.camera.position.set(0, 6, 3);
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.container.appendChild(this.renderer.domElement);
+                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+                this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
+                this.controls.target.set(0, 3, -30);
+            }
+
+            initLighting() {
+                this.scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+                const sunLight = new THREE.DirectionalLight(0xfffaed, 2.0);
+                sunLight.position.set(30, 50, 40);
+                sunLight.castShadow = true;
+                sunLight.shadow.mapSize.width = 2048;
+                sunLight.shadow.mapSize.height = 2048;
+                sunLight.shadow.camera.near = 0.5;
+                sunLight.shadow.camera.far = 150;
+                sunLight.shadow.camera.left = -30;
+                sunLight.shadow.camera.right = 30;
+                sunLight.shadow.camera.top = 30;
+                sunLight.shadow.camera.bottom = -30;
+                sunLight.shadow.bias = -0.001;
+                this.scene.add(sunLight);
+            }
+
+            initEnvironment() {
+                const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.8 }));
+                ground.rotation.x = -Math.PI / 2;
+                ground.receiveShadow = true;
+                this.scene.add(ground);
+                const grid = new THREE.GridHelper(100, 100, 0x333333, 0x222222);
+                grid.position.y = 0.02;
+                this.scene.add(grid);
+            }
+
+            // ============================================================
+            // Warehouse construction helpers (mirror the tactical-app
+            // procedural builder). All entries are added to `parent` so
+            // buildFacility() can group them for the outliner.
+            // ============================================================
+            _buildWarehouseShell(parent) {
+                // Interior extent (X×Z): 30 × 45. Wall height 15.
+                const WALL_H = 15, WALL_T = 0.6, HALF_W = 15;
+                const BACK_Z = -40, FRONT_Z = 5;
+
+                // Concrete floor with painted lane stripes
+                const floor = new THREE.Mesh(
+                    new THREE.BoxGeometry(HALF_W * 2 + 20, 0.4, (FRONT_Z - BACK_Z) + 20),
+                    Materials.concreteDark);
+                floor.position.set(0, 0.2, (FRONT_Z + BACK_Z) / 2);
+                floor.receiveShadow = true; floor.castShadow = false;
+                parent.add(floor);
+
+                const laneGeo = new THREE.BoxGeometry(1.5, 0.05, (FRONT_Z - BACK_Z) - 4);
+                [-6, 6].forEach(lx => {
+                    const lane = new THREE.Mesh(laneGeo, Materials.paint);
+                    lane.position.set(lx, 0.42, (FRONT_Z + BACK_Z) / 2);
+                    parent.add(lane);
+                });
+
+                // Back wall
+                const back = new THREE.Mesh(
+                    new THREE.BoxGeometry(HALF_W * 2, WALL_H, WALL_T), Materials.corrugated);
+                back.position.set(0, WALL_H / 2, BACK_Z);
+                back.castShadow = back.receiveShadow = true;
+                parent.add(back);
+
+                // Side walls
+                const sideLen = FRONT_Z - BACK_Z;
+                [-HALF_W, HALF_W].forEach(sx => {
+                    const w = new THREE.Mesh(
+                        new THREE.BoxGeometry(WALL_T, WALL_H, sideLen), Materials.corrugated);
+                    w.position.set(sx, WALL_H / 2, (FRONT_Z + BACK_Z) / 2);
+                    w.castShadow = w.receiveShadow = true;
+                    parent.add(w);
+                });
+
+                // Front wall — split around the cargo door opening
+                // (opening spans x∈[-8,8], y∈[0,9]).
+                const frontLeft = new THREE.Mesh(
+                    new THREE.BoxGeometry(7, WALL_H, WALL_T), Materials.corrugated);
+                frontLeft.position.set(-11.5, WALL_H / 2, FRONT_Z);
+                frontLeft.castShadow = frontLeft.receiveShadow = true;
+                parent.add(frontLeft);
+
+                const frontRight = frontLeft.clone(); frontRight.position.x = 11.5;
+                parent.add(frontRight);
+
+                const frontHeader = new THREE.Mesh(
+                    new THREE.BoxGeometry(16, WALL_H - 9, WALL_T), Materials.corrugated);
+                frontHeader.position.set(0, 9 + (WALL_H - 9) / 2, FRONT_Z);
+                frontHeader.castShadow = frontHeader.receiveShadow = true;
+                parent.add(frontHeader);
+
+                // Roof + trusses
+                const roof = new THREE.Mesh(
+                    new THREE.BoxGeometry(HALF_W * 2 + 1, 0.4, sideLen + 1), Materials.trim);
+                roof.position.set(0, WALL_H + 0.2, (FRONT_Z + BACK_Z) / 2);
+                roof.castShadow = roof.receiveShadow = true;
+                parent.add(roof);
+
+                for (let z = FRONT_Z - 6; z >= BACK_Z + 3; z -= 6) {
+                    const truss = new THREE.Mesh(
+                        new THREE.BoxGeometry(HALF_W * 2, 0.3, 0.3), Materials.trim);
+                    truss.position.set(0, WALL_H - 0.4, z);
+                    parent.add(truss);
+                }
+
+                // Skylights (emissive strip under the roof)
+                for (let z = FRONT_Z - 8; z >= BACK_Z + 6; z -= 14) {
+                    const sky = new THREE.Mesh(
+                        new THREE.PlaneGeometry(6, 4),
+                        new THREE.MeshBasicMaterial({ color: 0xa8d8ff, transparent: true, opacity: 0.7 }));
+                    sky.position.set(0, WALL_H - 0.3, z);
+                    sky.rotation.x = Math.PI / 2;
+                    parent.add(sky);
+                    const l = new THREE.PointLight(0xa8d8ff, 0.6, 24);
+                    l.position.set(0, WALL_H - 1.2, z);
+                    parent.add(l);
+                }
+
+                // Rail beam above the sliding doors
+                const rail = new THREE.Mesh(
+                    new THREE.BoxGeometry(24, 0.4, 0.4), Materials.trim);
+                rail.position.set(0, 9.5, FRONT_Z + 0.25);
+                parent.add(rail);
+            }
+
+            _buildSlidingDoors(parent) {
+                // Two doors that meet at x=0. Interactable — clicking a
+                // door slides it open sideways on its rail.
+                const doorConfigs = [
+                    { name: 'Sliding Cargo Door (Left)',  id: 'door_slide_left',  closedX: -4, openX: -13 },
+                    { name: 'Sliding Cargo Door (Right)', id: 'door_slide_right', closedX:  4, openX:  13 }
+                ];
+                doorConfigs.forEach(cfg => {
+                    const g = new THREE.Group();
+                    g.position.set(cfg.closedX, 0, 5 + 0.15);
+
+                    const panel = new THREE.Mesh(
+                        new THREE.BoxGeometry(8, 9, 0.35), Materials.corrugatedDoor);
+                    panel.position.y = 4.5;
+                    panel.castShadow = panel.receiveShadow = true;
+                    g.add(panel);
+
+                    parent.add(g);
+
+                    // Slide-on-rail animation
+                    const st = { isOpen: false, tween: null };
+                    const toggle = () => {
+                        st.isOpen = !st.isOpen;
+                        const target = st.isOpen ? cfg.openX : cfg.closedX;
+                        if (st.tween) st.tween.stop();
+                        st.tween = new TWEEN.Tween(g.position)
+                            .to({ x: target }, 1500)
+                            .easing(TWEEN.Easing.Quadratic.InOut).start();
+                        sceneRegistry[cfg.id].isOpen = st.isOpen;
+                        AppState.notify();
+                    };
+                    registerEntity(cfg.id, cfg.name, 'Mechanism', g, 'Corrugated Steel', true, toggle);
+                });
+            }
+
+            _buildMezzanineAndCatwalk(parent) {
+                // Mezzanine deck at y=3.5, catwalk at y=5 running back to
+                // the middle of the warehouse.
+                const MEZZ_Y = 3.5, MEZZ_D = 12, MEZZ_CZ = -33;
+
+                const deck = new THREE.Mesh(
+                    new THREE.BoxGeometry(30, 0.4, MEZZ_D), Materials.grate);
+                deck.position.set(0, MEZZ_Y, MEZZ_CZ);
+                deck.castShadow = deck.receiveShadow = true;
+                parent.add(deck);
+
+                // Support pillars
+                for (const px of [-12, 0, 12]) {
+                    const pillar = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.5, MEZZ_Y, 0.5), Materials.trim);
+                    pillar.position.set(px, MEZZ_Y / 2, MEZZ_CZ + MEZZ_D / 2 - 0.4);
+                    pillar.castShadow = true;
+                    parent.add(pillar);
+                }
+
+                // Yellow front railing on mezzanine
+                const railZ = MEZZ_CZ + MEZZ_D / 2 - 0.1;
+                for (let x = -14; x <= 14; x += 3) {
+                    const post = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.1, 1.2, 0.1), Materials.rail);
+                    post.position.set(x, MEZZ_Y + 0.8, railZ);
+                    post.castShadow = true;
+                    parent.add(post);
+                }
+                for (const yOff of [0.7, 1.4]) {
+                    const topRail = new THREE.Mesh(
+                        new THREE.BoxGeometry(28, 0.12, 0.12), Materials.rail);
+                    topRail.position.set(0, MEZZ_Y + yOff, railZ);
+                    parent.add(topRail);
+                }
+
+                // Catwalk at y=5 running toward the front of the warehouse
+                const CATWALK_Y = 5;
+                const catwalk = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.2, 0.2, 20), Materials.grate);
+                catwalk.position.set(0, CATWALK_Y, MEZZ_CZ + MEZZ_D / 2 + 10);
+                catwalk.castShadow = catwalk.receiveShadow = true;
+                parent.add(catwalk);
+
+                // Catwalk railings
+                for (let z = MEZZ_CZ + MEZZ_D / 2 + 1; z <= MEZZ_CZ + MEZZ_D / 2 + 19; z += 3) {
+                    for (const side of [-1, 1]) {
+                        const p = new THREE.Mesh(
+                            new THREE.BoxGeometry(0.08, 1.0, 0.08), Materials.rail);
+                        p.position.set(side * 1.1, CATWALK_Y + 0.6, z);
+                        parent.add(p);
+                    }
+                }
+                for (const side of [-1, 1]) {
+                    const r = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.1, 0.1, 20), Materials.rail);
+                    r.position.set(side * 1.1, CATWALK_Y + 1.1, MEZZ_CZ + MEZZ_D / 2 + 10);
+                    parent.add(r);
+                }
+
+                // Two staircases up to the mezzanine (one on each side)
+                for (const side of [-1, 1]) {
+                    const stair = new THREE.Group();
+                    const steps = Math.ceil(MEZZ_Y / 0.28);
+                    for (let i = 0; i < steps; i++) {
+                        const y = 0.4 + 0.28 * i;
+                        const z = MEZZ_CZ + MEZZ_D / 2 + 2.5 - 0.36 * i;
+                        const step = new THREE.Mesh(
+                            new THREE.BoxGeometry(3, 0.28, 0.36),
+                            new THREE.MeshStandardMaterial({ color: 0x555a61, roughness: 0.8 }));
+                        step.position.set(side * 11, y, z);
+                        step.castShadow = step.receiveShadow = true;
+                        stair.add(step);
+                    }
+                    parent.add(stair);
+                }
+
+                // Short ladder + walk-on ramp between mezzanine and catwalk
+                for (let i = 0; i < 3; i++) {
+                    const rung = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.6, 0.06, 0.06), Materials.trim);
+                    rung.position.set(0, MEZZ_Y + i * 0.55 + 0.3, MEZZ_CZ + MEZZ_D / 2);
+                    parent.add(rung);
+                }
+                const ramp = new THREE.Mesh(
+                    new THREE.BoxGeometry(2, 0.2, 2), Materials.grate);
+                ramp.position.set(0, (CATWALK_Y + MEZZ_Y) / 2,
+                                     MEZZ_CZ + MEZZ_D / 2 - 1);
+                ramp.castShadow = ramp.receiveShadow = true;
+                parent.add(ramp);
+            }
+
+            _spawnWarehouseProps(parent) {
+                // Shipping containers stacked at the back
+                this._addContainer(parent, -10, 1.25, -35, 'containerRed');
+                this._addContainer(parent,  10, 1.25, -35, 'containerBlue');
+                this._addContainer(parent,  10, 3.75, -35, 'containerRed');
+
+                // Pallet stacks along the sides
+                this._addPalletStack(parent, -8, 0.4, -15);
+                this._addPalletStack(parent,  8, 0.4, -15);
+                this._addPalletStack(parent, -8, 0.4, -25);
+                this._addPalletStack(parent,  8, 0.4, -25);
+
+                // Oil drums (ground + mezzanine)
+                [[-4, -20], [-3, -19], [ 5, -22]].forEach(([x, z]) =>
+                    this._addDrum(parent, x, 0.6, z));
+                this._addDrum(parent, -10, 4.1, -35);   // on mezzanine
+                this._addDrum(parent,  10, 4.1, -35);
+
+                // Hanging bullseye targets in a row
+                [-8, -3, 3, 8].forEach(x =>
+                    this._addHangingTarget(parent, x, 1.6, -12));
+
+                // Target dummies on the mezzanine
+                [-6, 0, 6].forEach(x => {
+                    const d = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.8, 2.4, 0.4), Materials.dummy);
+                    d.position.set(x, 3.5 + 1.2, -37);
+                    d.castShadow = d.receiveShadow = true;
+                    parent.add(d);
+                });
+            }
+
+            _addContainer(parent, x, y, z, matName) {
+                const g = new THREE.Group();
+                const w = 2.4, h = 2.5, d = 6;
+                const box = new THREE.Mesh(
+                    new THREE.BoxGeometry(w, h, d), Materials[matName]);
+                box.castShadow = box.receiveShadow = true;
+                g.add(box);
+                g.position.set(x, y, z);
+                parent.add(g);
+                registerEntity('container_' + Math.random().toString(36).slice(2, 8),
+                    matName === 'containerBlue' ? 'Shipping Container (Blue)' : 'Shipping Container (Red)',
+                    'Cargo', g, matName === 'containerBlue' ? 'Corten Steel (Blue)' : 'Corten Steel (Red)');
+                return g;
+            }
+
+            _addPalletStack(parent, x, y, z) {
+                const g = new THREE.Group();
+                // Pallet base
+                const pallet = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.4, 0.2, 2.4), Materials.wood);
+                pallet.position.y = 0.1;
+                pallet.castShadow = pallet.receiveShadow = true;
+                g.add(pallet);
+                // Crate stack
+                [[-0.55, 0.85, -0.55], [0.55, 0.85, -0.55],
+                 [-0.55, 0.85,  0.55], [0.55, 0.85,  0.55],
+                 [-0.55, 1.75, -0.55], [0.55, 1.75, -0.55],
+                 [ 0.0,  1.75,  0.55]].forEach(([dx, dy, dz]) => {
+                    const c = new THREE.Mesh(
+                        new THREE.BoxGeometry(1.0, 0.9, 1.0), Materials.wood);
+                    c.position.set(dx, dy, dz);
+                    c.castShadow = c.receiveShadow = true;
+                    g.add(c);
+                });
+                g.position.set(x, y, z);
+                parent.add(g);
+                registerEntity('pallet_' + Math.random().toString(36).slice(2, 8),
+                    'Wooden Pallet Stack', 'Cargo', g, 'Timber');
+                return g;
+            }
+
+            _addDrum(parent, x, y, z) {
+                const g = new THREE.Group();
+                const body = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.45, 0.45, 1.2, 24), Materials.drumBody);
+                body.castShadow = body.receiveShadow = true;
+                g.add(body);
+                const band = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.46, 0.46, 0.12, 24), Materials.drumTop);
+                band.position.y = 0.35;
+                g.add(band);
+                g.position.set(x, y, z);
+                parent.add(g);
+                registerEntity('drum_' + Math.random().toString(36).slice(2, 8),
+                    'Oil Drum', 'Cargo', g, 'Painted Steel');
+                return g;
+            }
+
+            _addHangingTarget(parent, x, y, z) {
+                const g = new THREE.Group();
+                const w = 1.6, h = 1.6, d = 0.15;
+                // Support beam
+                const beam = new THREE.Mesh(
+                    new THREE.BoxGeometry(w + 1.2, 0.15, 0.15), Materials.paint);
+                beam.position.y = 1.4;
+                g.add(beam);
+                // Poles
+                [-1, 1].forEach(side => {
+                    const pole = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.16, 5, 0.16), Materials.paint);
+                    pole.position.set(side * (w / 2 + 0.5), -1.1, 0);
+                    pole.castShadow = true;
+                    g.add(pole);
+                });
+                // Target plate (bullseye)
+                const face = Materials.bullseye, side = Materials.paint;
+                const plate = new THREE.Mesh(
+                    new THREE.BoxGeometry(w, h, d),
+                    [side, side, side, side, face, face]);
+                plate.castShadow = plate.receiveShadow = true;
+                g.add(plate);
+                g.position.set(x, y, z);
+                parent.add(g);
+                registerEntity('target_' + Math.random().toString(36).slice(2, 8),
+                    'Hanging Bullseye Target', 'Range', g, 'Steel & Paint');
+                return g;
+            }
+
+            buildFacility() {
+                // Warehouse build — mirrors the procedural warehouse from
+                // the tactical AR simulator: corrugated steel walls, concrete
+                // floor with painted lanes, mezzanine + stairs + catwalk,
+                // sliding cargo doors, shipping containers, pallets, oil
+                // drums, and hanging bullseye targets.
+                const facilityGroup = new THREE.Group();
+                this.scene.add(facilityGroup);
+
+                // 1. Foundation (registered so it still appears in the outliner)
+                const shellGroup = new THREE.Group();
+                this._buildWarehouseShell(shellGroup);
+                facilityGroup.add(shellGroup);
+                registerEntity('structure_shell', 'Warehouse Shell',
+                    'Architecture', shellGroup, 'Corrugated Steel & Concrete');
+
+                // 2. Mezzanine + catwalk + stairs
+                const mezzGroup = new THREE.Group();
+                this._buildMezzanineAndCatwalk(mezzGroup);
+                facilityGroup.add(mezzGroup);
+                registerEntity('structure_mezz', 'Mezzanine & Catwalk',
+                    'Architecture', mezzGroup, 'Steel Grate & Yellow Rail');
+
+                // 3. Sliding cargo doors (interactive — click to slide open)
+                this._buildSlidingDoors(facilityGroup);
+
+                // 4. Warehouse contents (containers, pallets, drums, targets)
+                const propsGroup = new THREE.Group();
+                this._spawnWarehouseProps(propsGroup);
+                facilityGroup.add(propsGroup);
+
+                // Selection helper
+                this.selectHelper = new THREE.BoxHelper(undefined, 0x3b82f6);
+                this.selectHelper.visible = false;
+                this.scene.add(this.selectHelper);
+            }
+
+            addGeneratedConstruct(config) {
+                // Warehouse-aware AI construct spawner. If the AI (or the
+                // fallback parser) picked a warehouse-specific type we
+                // route it to the corresponding helper so the new piece
+                // matches the rest of the scene's visual language.
+                const pos = config.position || [0, 1, 0];
+                let group = null;
+
+                if (config.type === 'container') {
+                    const matName = (config.material === 'containerBlue') ? 'containerBlue' : 'containerRed';
+                    group = this._addContainer(this.scene, pos[0], pos[1], pos[2], matName);
+                } else if (config.type === 'drum') {
+                    group = this._addDrum(this.scene, pos[0], pos[1], pos[2]);
+                } else if (config.type === 'pallet_stack') {
+                    group = this._addPalletStack(this.scene, pos[0], pos[1], pos[2]);
+                } else if (config.type === 'hanging_target') {
+                    group = this._addHangingTarget(this.scene, pos[0], pos[1], pos[2]);
+                } else if (config.type === 'crate') {
+                    // Single wooden crate
+                    const g = new THREE.Group();
+                    const mesh = new THREE.Mesh(
+                        new THREE.BoxGeometry(1, 1, 1),
+                        Materials.wood);
+                    mesh.castShadow = mesh.receiveShadow = true;
+                    g.add(mesh);
+                    g.position.set(pos[0], pos[1], pos[2]);
+                    g.scale.set(...(config.scale || [1, 1, 1]));
+                    this.scene.add(g);
+                    const id = 'gen_' + Date.now();
+                    registerEntity(id, config.name || 'Wooden Crate',
+                        'Generated Unit', g, 'Timber');
+                    group = g;
+                } else {
+                    // Primitive fallback (box / cylinder / sphere) — same
+                    // behaviour as before, but resolves against the new
+                    // materials library so warehouse palettes still work.
+                    const geoMap = {
+                        'box':      new THREE.BoxGeometry(1, 1, 1),
+                        'cylinder': new THREE.CylinderGeometry(0.5, 0.5, 1, 16),
+                        'sphere':   new THREE.SphereGeometry(0.5, 16, 16)
+                    };
+                    const geometry = geoMap[config.type] || geoMap['box'];
+                    const mat = Materials[config.material] || Materials.steel;
+
+                    const g = new THREE.Group();
+                    const mesh = new THREE.Mesh(geometry, mat);
+                    mesh.castShadow = true; mesh.receiveShadow = true;
+                    g.add(mesh);
+
+                    g.position.set(pos[0], pos[1], pos[2]);
+                    g.scale.set(...(config.scale || [1, 1, 1]));
+                    this.scene.add(g);
+
+                    const id = 'gen_' + Date.now();
+                    registerEntity(id, config.name || 'AI Construct',
+                        'Generated Unit', g, config.material || 'steel');
+                    group = g;
+                }
+
+                // Drop-in bounce animation — same feel as the original.
+                if (group) {
+                    const finalY = group.position.y;
+                    group.position.y += 10;
+                    new TWEEN.Tween(group.position)
+                        .to({ y: finalY }, 1000)
+                        .easing(TWEEN.Easing.Bounce.Out)
+                        .start();
+                }
+
+                if (window.renderOutliner) window.renderOutliner();
+            }
+
+            initInteraction() {
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+                this.tooltip = document.getElementById('viewport-tooltip');
+                this.tooltipName = document.getElementById('tooltip-name');
+                this.tooltipAction = document.getElementById('tooltip-action');
+                
+                const getMeshes = () => {
+                    let meshes = [];
+                    Object.values(sceneRegistry).forEach(entity => {
+                        if (entity.meshGroup) {
+                            entity.meshGroup.traverse(child => {
+                                if (child.isMesh && child.userData.id) meshes.push(child);
+                            });
+                        }
+                    });
+                    return meshes;
+                };
+
+                AppState.subscribe((state) => {
+                    if (state.selectedId && sceneRegistry[state.selectedId]?.meshGroup) {
+                        this.selectHelper.setFromObject(sceneRegistry[state.selectedId].meshGroup);
+                        this.selectHelper.visible = true;
+                    } else {
+                        this.selectHelper.visible = false;
+                    }
+                });
+
+                this.container.addEventListener('mousemove', (e) => {
+                    const rect = this.container.getBoundingClientRect();
+                    this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                    this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+                    this.raycaster.setFromCamera(this.mouse, this.camera);
+                    const intersects = this.raycaster.intersectObjects(getMeshes());
+
+                    if (intersects.length > 0) {
+                        const hitId = intersects[0].object.userData.id;
+                        const entity = sceneRegistry[hitId];
+                        
+                        if (AppState.hoveredId !== hitId) {
+                            AppState.update({ hoveredId: hitId });
+                            this.container.style.cursor = entity.interactable ? 'pointer' : 'crosshair';
+                            this.tooltipName.innerText = entity.name;
+                            if (entity.interactable) {
+                                this.tooltipAction.classList.remove('hidden');
+                                this.tooltip.classList.replace('border-blue-500/50', 'border-yellow-400');
+                                this.tooltip.classList.replace('bg-blue-900/90', 'bg-yellow-900/90');
+                            } else {
+                                this.tooltipAction.classList.add('hidden');
+                                this.tooltip.classList.replace('border-yellow-400', 'border-blue-500/50');
+                                this.tooltip.classList.replace('bg-yellow-900/90', 'bg-blue-900/90');
+                            }
+                            this.tooltip.style.display = 'flex';
+                        }
+                        this.tooltip.style.left = `${e.clientX - rect.left}px`;
+                        this.tooltip.style.top = `${e.clientY - rect.top - 10}px`;
+                    } else {
+                        if (AppState.hoveredId !== null) {
+                            AppState.update({ hoveredId: null });
+                            this.container.style.cursor = 'default';
+                            this.tooltip.style.display = 'none';
+                        }
+                    }
+                });
+
+                this.container.addEventListener('click', () => {
+                    if (AppState.hoveredId) {
+                        AppState.update({ selectedId: AppState.hoveredId });
+                        const entity = sceneRegistry[AppState.hoveredId];
+                        if (entity && entity.interactable && entity.toggleFunc) entity.toggleFunc();
+                    } else {
+                        AppState.update({ selectedId: null });
+                    }
+                });
+            }
+
+            resetCamera() {
+                // Camera framing tuned for the warehouse (matches the
+                // default in initScene).
+                new TWEEN.Tween(this.camera.position).to({ x: 0, y: 6, z: 3 }, 1000).easing(TWEEN.Easing.Cubic.Out).start();
+                new TWEEN.Tween(this.controls.target).to({ x: 0, y: 3, z: -30 }, 1000).easing(TWEEN.Easing.Cubic.Out).start();
+            }
+
+            onWindowResize() {
+                this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+            }
+
+            animate(time) {
+                requestAnimationFrame(this.animate);
+                TWEEN.update(time);
+                this.controls.update();
+                if(this.selectHelper.visible) {
+                    const pulse = Math.sin(time * 0.005) * 0.5 + 0.5;
+                    this.selectHelper.material.opacity = 0.4 + (pulse * 0.6);
+                    this.selectHelper.material.transparent = true;
+                }
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        // --- UI Controller ---
+        window.renderOutliner = function() {
+            const listEl = document.getElementById('ui-hierarchy');
+            listEl.innerHTML = '';
+            
+            Object.values(sceneRegistry).forEach(item => {
+                const li = document.createElement('div');
+                li.id = `ui-item-${item.id}`;
+                li.className = "hierarchy-item px-3 py-2.5 mb-0.5 flex items-center justify-between cursor-pointer text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-colors rounded";
+                
+                let icon = item.type === 'Mechanism' 
+                    ? `<svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>`
+                    : (item.type === 'Generated Unit' 
+                        ? `<svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>` 
+                        : `<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>`);
+
+                li.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        ${icon}
+                        <span class="truncate select-none font-medium">${item.name}</span>
+                    </div>
+                    ${item.type === 'Mechanism' ? '<span class="text-[9px] uppercase tracking-wider text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded border border-yellow-500/20">Interact</span>' : ''}
+                `;
+
+                li.addEventListener('click', () => AppState.update({ selectedId: item.id }));
+                listEl.appendChild(li);
+                
+                // Re-apply selection state if we just re-rendered while something is selected
+                if (AppState.selectedId === item.id) li.classList.add('selected');
+            });
+        };
+
+        function initUI() {
+            window.renderOutliner();
+            const inspectorEmpty = document.getElementById('inspector-empty');
+            const inspectorContent = document.getElementById('inspector-content');
+
+            AppState.subscribe((state) => {
+                document.querySelectorAll('.hierarchy-item').forEach(el => el.classList.remove('selected'));
+                if (state.selectedId) {
+                    const el = document.getElementById(`ui-item-${state.selectedId}`);
+                    if (el) el.classList.add('selected');
+                    
+                    const item = sceneRegistry[state.selectedId];
+                    if(!item) return;
+                    
+                    inspectorEmpty.classList.add('hidden');
+                    inspectorContent.classList.remove('hidden');
+                    
+                    document.getElementById('prop-name').innerText = item.name;
+                    document.getElementById('prop-type').innerText = `Class: ${item.type}`;
+                    document.getElementById('prop-mat').innerText = item.materialName || 'Standard';
+                    
+                    const indicator = document.getElementById('prop-status-indicator');
+                    const controlsPanel = document.getElementById('prop-controls');
+                    const toggleBtn = document.getElementById('btn-toggle-door');
+                    const statusText = document.getElementById('prop-door-status');
+
+                    if (item.type === 'Mechanism') {
+                        indicator.className = 'w-2 h-2 rounded-full shadow-[0_0_8px_currentColor] ' + (item.isOpen ? 'bg-green-500 text-green-500' : 'bg-yellow-500 text-yellow-500');
+                        controlsPanel.classList.remove('hidden');
+                        statusText.innerText = `Status: ${item.isOpen ? 'OPEN' : 'CLOSED'}`;
+                        statusText.className = item.isOpen ? 'text-xs text-green-400 font-bold tracking-wide' : 'text-xs text-yellow-500 font-bold tracking-wide';
+                        toggleBtn.innerText = item.isOpen ? 'Close System' : 'Open System';
+                        toggleBtn.onclick = () => item.toggleFunc();
+                    } else {
+                        indicator.className = 'w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]';
+                        if(item.type === 'Generated Unit') indicator.className = 'w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_#a855f7]';
+                        controlsPanel.classList.add('hidden');
+                    }
+                } else {
+                    inspectorEmpty.classList.remove('hidden');
+                    inspectorContent.classList.add('hidden');
+                }
+            });
+            
+            // --- Prompt Submission Logic ---
+            document.getElementById('ai-submit').addEventListener('click', handlePromptSubmit);
+            document.getElementById('ai-prompt').addEventListener('keypress', (e) => {
+                if(e.key === 'Enter') handlePromptSubmit();
+            });
+        }
+
+        async function handlePromptSubmit() {
+            const input = document.getElementById('ai-prompt');
+            const prompt = input.value.trim();
+            if (!prompt) return;
+            
+            const btn = document.getElementById('ai-submit');
+            const originalBtnHTML = btn.innerHTML;
+            
+            // Loading state
+            input.disabled = true;
+            btn.innerHTML = 'Parsing...';
+            btn.disabled = true;
+            document.getElementById('ai-loading-bar').style.width = '100%';
+            
+            try {
+                let config;
+                try {
+                    if (!apiKey) throw new Error("No API key available, forcing local fallback.");
+                    config = await generateWithAI(prompt);
+                    showToast("AI Generated Construct successfully!");
+                } catch (apiErr) {
+                    console.warn("AI Generation offline, using local heuristics.", apiErr);
+                    config = fallbackParser(prompt);
+                    showToast("API Offline. Used local heuristics generator.", "error");
+                }
+                
+                window.appEngine.addGeneratedConstruct(config);
+                input.value = '';
+            } catch (e) {
+                showToast("Failed to generate construct.", "error");
+            } finally {
+                input.disabled = false;
+                btn.innerHTML = originalBtnHTML;
+                btn.disabled = false;
+                document.getElementById('ai-loading-bar').style.width = '0%';
+                input.focus();
+            }
+        }
+
+        // --- Bootstrap ---
+        window.onload = () => {
+            window.appEngine = new Engine3D('canvas-container');
+            initUI();
+        };
+    </script>
+</body>
+</html>
