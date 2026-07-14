@@ -14,7 +14,6 @@ import {
   Volume2, 
   VolumeX, 
   CheckCircle,
-  HelpCircle,
   Dribbble,
   Crosshair
 } from "lucide-react";
@@ -45,12 +44,14 @@ interface GameWorldProps {
   onUpdateStats: (updater: (prev: GameStats) => GameStats) => void;
   onGameOver: () => void;
   soundEnabled: boolean;
+  environment?: "cyber" | "desert" | "volcano" | "arctic";
+  invertJoystickX?: boolean;
 }
 
 // ─── PROCEDURAL GENERATION HELPERS ───────────────────────────────────────────
 
 // Fast pseudo-noise height generator for realistic mountains and ocean bed
-function getTerrainHeight(x: number, z: number): number {
+function getTerrainHeight(x: number, z: number, environment: "cyber" | "desert" | "volcano" | "arctic" = "cyber"): number {
   // Central base platform around (0,0) - perfect for testing grounds and buildings
   const distFromCenter = Math.sqrt(x * x + z * z);
   
@@ -62,24 +63,86 @@ function getTerrainHeight(x: number, z: number): number {
   // Smooth transition from flat to mountains
   const mountainWeight = Math.min(1.0, (distFromCenter - 25) / 100.0);
   
-  // Base wave octaves for mountain ranges
-  const octave1 = Math.sin(x * 0.02) * Math.cos(z * 0.02) * 20;
-  const octave2 = Math.cos(x * 0.05 + 1.0) * Math.sin(z * 0.06) * 8;
-  const octave3 = Math.sin(x * 0.15) * Math.sin(z * 0.12) * 2;
-  const peaks = Math.max(0, octave1 + octave2 + octave3);
-  
-  // Create a beach sloping down into an ocean on the West (x < -30)
-  let oceanSlope = 0;
-  if (x < -20) {
-    oceanSlope = (x + 20) * 0.15; // Slopes down to negative Y
-  }
+  if (environment === "desert") {
+    // Neon Desert: broad sloping sand dunes, flat dry salt beds, and sharp canyon cliffs
+    const octave1 = Math.sin(x * 0.015) * Math.cos(z * 0.015) * 12; // dunes
+    const octave2 = Math.cos(x * 0.08) * Math.sin(z * 0.08) * 4; // sharp steps
+    const octave3 = Math.sin(x * 0.2) * Math.sin(z * 0.2) * 1.5; // ripples
+    
+    // Terraced canyon steps
+    let peaks = octave1 + octave2 + octave3;
+    if (peaks > 4) {
+      // Create step canyon shelves
+      peaks = 4 + Math.floor(peaks - 4) * 2 + ((peaks - 4) % 1) * 0.2;
+    }
+    
+    // Deep oasis pool canyon on the West
+    let oasisSlope = 0;
+    if (x < -20) {
+      oasisSlope = (x + 20) * 0.12;
+    }
+    
+    let height = peaks * mountainWeight + oasisSlope;
+    if (height < -12) height = -12;
+    return height;
+    
+  } else if (environment === "volcano") {
+    // Volcanic Wasteland: violent craggy ridges, caldera slopes, deep lava rifts
+    const octave1 = Math.abs(Math.sin(x * 0.025) * Math.cos(z * 0.025)) * 32; // jagged peaks
+    const octave2 = Math.sin(x * 0.07) * Math.cos(z * 0.07) * 6;
+    const octave3 = (Math.cos(x * 0.18) + Math.sin(z * 0.18)) * 1.5;
+    
+    let peaks = octave1 + octave2 + octave3;
+    // Lava trenches / cracks
+    const trenchPattern = Math.sin(x * 0.04) * Math.cos(z * 0.04);
+    if (trenchPattern < -0.3) {
+      peaks -= 15; // sudden deep crack
+    }
+    
+    let volcanicSlope = 0;
+    if (x < -25) {
+      volcanicSlope = (x + 25) * 0.22; // steep drop into lava sea
+    }
+    
+    let height = peaks * mountainWeight + volcanicSlope;
+    if (height < -20) height = -20;
+    return height;
 
-  let height = peaks * mountainWeight + oceanSlope;
-  
-  // Cap the ocean bed depth
-  if (height < -25) height = -25;
-  
-  return height;
+  } else if (environment === "arctic") {
+    // Arctic Tundra: smooth rounded icy sheets, giant glacier icebergs, frozen crevices
+    const octave1 = Math.sin(x * 0.012) * Math.sin(z * 0.012) * 18;
+    const octave2 = Math.cos(x * 0.04) * Math.cos(z * 0.04) * 5;
+    const octave3 = Math.sin(x * 0.1) * Math.cos(z * 0.1) * 2;
+    
+    // Rounded domes/hummocks
+    const dome = Math.sin(octave1 * 0.1) * 10;
+    let peaks = dome + octave2 + octave3;
+    
+    let arcticSlope = 0;
+    if (x < -20) {
+      arcticSlope = (x + 20) * 0.1; // slope to frozen bay
+    }
+    
+    let height = peaks * mountainWeight + arcticSlope;
+    if (height < -15) height = -15;
+    return height;
+
+  } else {
+    // Default cyber mountains
+    const octave1 = Math.sin(x * 0.02) * Math.cos(z * 0.02) * 20;
+    const octave2 = Math.cos(x * 0.05 + 1.0) * Math.sin(z * 0.06) * 8;
+    const octave3 = Math.sin(x * 0.15) * Math.sin(z * 0.12) * 2;
+    const peaks = Math.max(0, octave1 + octave2 + octave3);
+    
+    let oceanSlope = 0;
+    if (x < -20) {
+      oceanSlope = (x + 20) * 0.15;
+    }
+
+    let height = peaks * mountainWeight + oceanSlope;
+    if (height < -25) height = -25;
+    return height;
+  }
 }
 
 // Helper to calculate wave displacement for water physics
@@ -90,6 +153,85 @@ function getWaterDisplacement(x: number, z: number, time: number): number {
   const wave3 = Math.sin((x + z) * 0.1 + time * 1.0) * 0.15;
   return -2.0 + wave1 + wave2 + wave3; // Ocean height is centered around Y = -2
 }
+
+const ENV_CONFIGS = {
+  cyber: {
+    skyColor: "#04060e",
+    fogColor: "#04060e",
+    fogDensity: 0.015,
+    ambientColor: 0x1e2b4d,
+    ambientIntensity: 0.7,
+    sunColor: 0xffaa66,
+    sunIntensity: 1.4,
+    oceanLightColor: 0x38bdf8,
+    oceanLightIntensity: 0.8,
+    sandCol: "#ccb088",
+    grassCol: "#0f172a",
+    neonGridCol: "#1e293b",
+    snowCol: "#4a5568",
+    wireframeColor: 0x1240d6,
+    wireframeOpacity: 0.08,
+    oceanColor: 0x075e8a,
+    oceanOpacity: 0.78,
+  },
+  desert: {
+    skyColor: "#1e100c",
+    fogColor: "#1e100c",
+    fogDensity: 0.012,
+    ambientColor: 0x4d2c1e,
+    ambientIntensity: 0.65,
+    sunColor: 0xff9f55,
+    sunIntensity: 1.5,
+    oceanLightColor: 0x14b8a6, // Oasis turquoise reflection
+    oceanLightIntensity: 0.9,
+    sandCol: "#f59e0b", // Golden orange dunes
+    grassCol: "#b45309", // Terracotta cliffs
+    neonGridCol: "#451a03", // Dark desert basalt
+    snowCol: "#1c0d02", // Very dark clay peak accents
+    wireframeColor: 0xf97316, // Bright neon orange grid
+    wireframeOpacity: 0.12,
+    oceanColor: 0x115e59, // Darker turquoise oasis pool
+    oceanOpacity: 0.82,
+  },
+  volcano: {
+    skyColor: "#0c0205",
+    fogColor: "#0c0205",
+    fogDensity: 0.02,
+    ambientColor: 0x3b0712,
+    ambientIntensity: 0.8,
+    sunColor: 0xef4444, // Burning red sun
+    sunIntensity: 1.6,
+    oceanLightColor: 0xf97316, // Orange magma glare
+    oceanLightIntensity: 1.1,
+    sandCol: "#111827", // Black obsidian beach
+    grassCol: "#1f2937", // Gray lava crust
+    neonGridCol: "#374151", // Volcanic basalt rock
+    snowCol: "#dc2626", // Incandescent lava peak veins
+    wireframeColor: 0xef4444, // Hot neon red grid
+    wireframeOpacity: 0.15,
+    oceanColor: 0x991b1b, // Glowing deep crimson lava
+    oceanOpacity: 0.9,
+  },
+  arctic: {
+    skyColor: "#02141a",
+    fogColor: "#02141a",
+    fogDensity: 0.016,
+    ambientColor: 0x082f49,
+    ambientIntensity: 0.8,
+    sunColor: 0xa5f3fc, // Cool celestial cyan sun
+    sunIntensity: 1.3,
+    oceanLightColor: 0x0ea5e9, // Glacier ice sheet glows
+    oceanLightIntensity: 0.9,
+    sandCol: "#38bdf8", // Glowing cyan beach ice
+    grassCol: "#0369a1", // Dark blue glacier pack
+    neonGridCol: "#1e293b", // Slate blue bedrock
+    snowCol: "#f1f5f9", // Crisp white frost snow
+    wireframeColor: 0x06b6d4, // Glacier blue neon grid
+    wireframeOpacity: 0.1,
+    oceanColor: 0x0ea5e9, // High-visibility frozen cyan bay
+    oceanOpacity: 0.72,
+  }
+};
 
 // Building geometry schemas for collision and stairs
 interface BoundingBox3D {
@@ -122,8 +264,14 @@ interface BuildingStructure {
 
 // ─── 3D ENVIRONMENT COMPONENT ────────────────────────────────────────────────
 
-export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabled }: GameWorldProps) {
+export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabled, environment = "cyber", invertJoystickX = true }: GameWorldProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  const environmentRef = useRef(environment);
+  environmentRef.current = environment;
+  
+  const invertJoystickXRef = useRef(invertJoystickX);
+  invertJoystickXRef.current = invertJoystickX;
   
   // Game states & refs
   const [controlsHelp, setControlsHelp] = useState(true);
@@ -131,33 +279,38 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
   const [activePrompt, setActivePrompt] = useState<string | null>(null);
   const [carSirens, setCarSirens] = useState(false);
   const [carHorn, setCarHorn] = useState(false);
+  const [pointerLocked, setPointerLocked] = useState(false);
 
-  // Virtual joystick state and refs
-  const joystickBaseRef = useRef<HTMLDivElement>(null);
-  const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
-  const [isJoystickDragging, setIsJoystickDragging] = useState(false);
+  // Virtual movement joystick state and refs (Left)
+  const moveJoystickBaseRef = useRef<HTMLDivElement>(null);
+  const [moveJoystickKnob, setMoveJoystickKnob] = useState({ x: 0, y: 0 });
+  const [isMoveJoystickDragging, setIsMoveJoystickDragging] = useState(false);
+  const activeMovePointerId = useRef<number | null>(null);
 
-  const handleJoystickStart = (clientX: number, clientY: number) => {
-    setIsJoystickDragging(true);
-  };
+  // Virtual look/aim joystick state and refs (Right)
+  const lookJoystickBaseRef = useRef<HTMLDivElement>(null);
+  const [lookJoystickKnob, setLookJoystickKnob] = useState({ x: 0, y: 0 });
+  const [isLookJoystickDragging, setIsLookJoystickDragging] = useState(false);
+  const lookStickValue = useRef({ x: 0, y: 0 });
+  const activeLookPointerId = useRef<number | null>(null);
 
-  const handleJoystickMove = useCallback((clientX: number, clientY: number) => {
-    if (!isJoystickDragging || !joystickBaseRef.current) return;
-    const rect = joystickBaseRef.current.getBoundingClientRect();
+  const updateMoveJoystick = (clientX: number, clientY: number) => {
+    if (!moveJoystickBaseRef.current) return;
+    const rect = moveJoystickBaseRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
     
     let dx = clientX - centerX;
     let dy = clientY - centerY;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    const maxRadius = 50; 
+    const maxRadius = 45; 
     
     if (distance > maxRadius) {
       dx = (dx / distance) * maxRadius;
       dy = (dy / distance) * maxRadius;
     }
     
-    setJoystickKnob({ x: dx, y: dy });
+    setMoveJoystickKnob({ x: dx, y: dy });
     
     const nx = dx / maxRadius;
     const ny = dy / maxRadius;
@@ -165,53 +318,102 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
     const deadzone = 0.15;
     keysPressed.current["w"] = ny < -deadzone;
     keysPressed.current["s"] = ny > deadzone;
-    keysPressed.current["a"] = nx < -deadzone;
-    keysPressed.current["d"] = nx > deadzone;
-  }, [isJoystickDragging]);
-
-  const handleJoystickEnd = useCallback(() => {
-    setIsJoystickDragging(false);
-    setJoystickKnob({ x: 0, y: 0 });
     
-    keysPressed.current["w"] = false;
-    keysPressed.current["s"] = false;
-    keysPressed.current["a"] = false;
-    keysPressed.current["d"] = false;
-  }, []);
+    const actualNx = invertJoystickXRef.current ? -nx : nx;
+    keysPressed.current["a"] = actualNx < -deadzone;
+    keysPressed.current["d"] = actualNx > deadzone;
+  };
+
+  const updateLookJoystick = (clientX: number, clientY: number) => {
+    if (!lookJoystickBaseRef.current) return;
+    const rect = lookJoystickBaseRef.current.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    let dx = clientX - centerX;
+    let dy = clientY - centerY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const maxRadius = 45;
+    
+    if (distance > maxRadius) {
+      dx = (dx / distance) * maxRadius;
+      dy = (dy / distance) * maxRadius;
+    }
+    
+    setLookJoystickKnob({ x: dx, y: dy });
+    
+    const nx = dx / maxRadius;
+    const ny = dy / maxRadius;
+    
+    const deadzone = 0.1;
+    if (Math.abs(nx) > deadzone || Math.abs(ny) > deadzone) {
+      const actualNx = invertJoystickXRef.current ? -nx : nx;
+      lookStickValue.current = { x: actualNx, y: ny };
+    } else {
+      lookStickValue.current = { x: 0, y: 0 };
+    }
+  };
+
+  const handleMoveJoystickStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    activeMovePointerId.current = e.pointerId;
+    setIsMoveJoystickDragging(true);
+    updateMoveJoystick(e.clientX, e.clientY);
+  };
+
+  const handleLookJoystickStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    activeLookPointerId.current = e.pointerId;
+    setIsLookJoystickDragging(true);
+    updateLookJoystick(e.clientX, e.clientY);
+  };
+
+  // Keep refs to update handlers so the global event listeners don't require recreation or use stale closures
+  const updateMoveJoystickRef = useRef(updateMoveJoystick);
+  updateMoveJoystickRef.current = updateMoveJoystick;
+  const updateLookJoystickRef = useRef(updateLookJoystick);
+  updateLookJoystickRef.current = updateLookJoystick;
 
   useEffect(() => {
-    if (!isJoystickDragging) return;
-
-    const onMouseMove = (e: MouseEvent) => {
-      handleJoystickMove(e.clientX, e.clientY);
-    };
-
-    const onMouseUp = () => {
-      handleJoystickEnd();
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
-        handleJoystickMove(e.touches[0].clientX, e.touches[0].clientY);
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.pointerId === activeMovePointerId.current) {
+        updateMoveJoystickRef.current(e.clientX, e.clientY);
+      } else if (e.pointerId === activeLookPointerId.current) {
+        updateLookJoystickRef.current(e.clientX, e.clientY);
       }
     };
 
-    const onTouchEnd = () => {
-      handleJoystickEnd();
+    const handlePointerUp = (e: PointerEvent) => {
+      if (e.pointerId === activeMovePointerId.current) {
+        activeMovePointerId.current = null;
+        setIsMoveJoystickDragging(false);
+        setMoveJoystickKnob({ x: 0, y: 0 });
+        keysPressed.current["w"] = false;
+        keysPressed.current["s"] = false;
+        keysPressed.current["a"] = false;
+        keysPressed.current["d"] = false;
+      } else if (e.pointerId === activeLookPointerId.current) {
+        activeLookPointerId.current = null;
+        setIsLookJoystickDragging(false);
+        setLookJoystickKnob({ x: 0, y: 0 });
+        lookStickValue.current = { x: 0, y: 0 };
+      }
     };
 
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onTouchEnd);
+    const handlePointerCancel = (e: PointerEvent) => {
+      handlePointerUp(e);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    window.addEventListener("pointerup", handlePointerUp, { passive: true });
+    window.addEventListener("pointercancel", handlePointerCancel, { passive: true });
 
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [isJoystickDragging, handleJoystickMove, handleJoystickEnd]);
+  }, []);
 
   // Keyboard state
   const keysPressed = useRef<{ [key: string]: boolean }>({});
@@ -504,7 +706,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       p.z = c.z + Math.cos(angle) * 2.5;
       
       // Keep on building heights if car was parked on one
-      p.y = Math.max(0, getTerrainHeight(p.x, p.z) + 0.8);
+      p.y = Math.max(0, getTerrainHeight(p.x, p.z, environmentRef.current) + 0.8);
       p.vx = 0;
       p.vz = 0;
       p.vy = 0;
@@ -612,6 +814,40 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
     }, 1200);
   }, [stats.reserve, stats.ammo, onUpdateStats]);
 
+  // Stable refs for props and state to prevent re-triggering the massive Three.js initialization useEffect
+  const isDrivingRef = useRef(stats.isDriving);
+  isDrivingRef.current = stats.isDriving;
+
+  const ammoRef = useRef(stats.ammo);
+  ammoRef.current = stats.ammo;
+
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
+
+  const onUpdateStatsRef = useRef(onUpdateStats);
+  onUpdateStatsRef.current = onUpdateStats;
+
+  const performReloadRef = useRef(performReload);
+  performReloadRef.current = performReload;
+
+  const onGameOverRef = useRef(onGameOver);
+  onGameOverRef.current = onGameOver;
+
+  const playSynthSoundRef = useRef(playSynthSound);
+  playSynthSoundRef.current = playSynthSound;
+
+  const updateEngineAudioRef = useRef(updateEngineAudio);
+  updateEngineAudioRef.current = updateEngineAudio;
+
+  const toggleVehicleModeRef = useRef(toggleVehicleMode);
+  toggleVehicleModeRef.current = toggleVehicleMode;
+
+  const fireWeaponRef = useRef(fireWeapon);
+  fireWeaponRef.current = fireWeapon;
+
   // ─── INITIALIZATION & CORE LOOP ──────────────────────────────────────────────
 
   useEffect(() => {
@@ -633,8 +869,10 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
     sceneRef.current = scene;
 
     // Elegant cyber sunset atmosphere
-    scene.background = new THREE.Color("#04060e");
-    scene.fog = new THREE.FogExp2("#04060e", 0.015);
+    const config = ENV_CONFIGS[environment] || ENV_CONFIGS.cyber;
+
+    scene.background = new THREE.Color(config.skyColor);
+    scene.fog = new THREE.FogExp2(config.fogColor, config.fogDensity);
 
     const camera = new THREE.PerspectiveCamera(65, width / height, 0.1, 1000);
     cameraRef.current = camera;
@@ -648,10 +886,10 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
     rendererRef.current = renderer;
 
     // 2. Beautiful Sky Dome & Sun Light
-    const ambientLight = new THREE.AmbientLight(0x1e2b4d, 0.7);
+    const ambientLight = new THREE.AmbientLight(config.ambientColor, config.ambientIntensity);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xffaa66, 1.4);
+    const sunLight = new THREE.DirectionalLight(config.sunColor, config.sunIntensity);
     sunLight.position.set(80, 50, 40);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 1024;
@@ -666,7 +904,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
     scene.add(sunLight);
 
     // Rim lighting / ocean reflection glows
-    const oceanLight = new THREE.DirectionalLight(0x38bdf8, 0.8);
+    const oceanLight = new THREE.DirectionalLight(config.oceanLightColor, config.oceanLightIntensity);
     oceanLight.position.set(-60, 20, -50);
     scene.add(oceanLight);
 
@@ -680,15 +918,15 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
     const colorArray: number[] = [];
 
     // Colors mapping: beach yellow, cliff rock, high peaks
-    const sandCol = new THREE.Color("#ccb088");
-    const grassCol = new THREE.Color("#0f172a"); // Cyber slate
-    const neonGridCol = new THREE.Color("#1e293b"); // Mountain rock dark slate
-    const snowCol = new THREE.Color("#4a5568");
+    const sandCol = new THREE.Color(config.sandCol);
+    const grassCol = new THREE.Color(config.grassCol); // Cyber slate
+    const neonGridCol = new THREE.Color(config.neonGridCol); // Mountain rock dark slate
+    const snowCol = new THREE.Color(config.snowCol);
 
     for (let i = 0; i < positions.count; i++) {
       const vx = positions.getX(i);
       const vz = positions.getZ(i);
-      const vy = getTerrainHeight(vx, vz);
+      const vy = getTerrainHeight(vx, vz, environment);
       
       positions.setY(i, vy);
 
@@ -729,10 +967,10 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
 
     // Neon grid accent over terrain to fit the FPS cyber theme
     const wireframeMat = new THREE.MeshBasicMaterial({
-      color: 0x1240d6,
+      color: config.wireframeColor,
       wireframe: true,
       transparent: true,
-      opacity: 0.08
+      opacity: config.wireframeOpacity
     });
     const terrainWireframe = new THREE.Mesh(terrainGeo.clone(), wireframeMat);
     terrainWireframe.position.y += 0.02; // Avoid z-fighting
@@ -744,11 +982,11 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
     
     // Simple shader-like vertex modification in loop is applied later
     const oceanMat = new THREE.MeshStandardMaterial({
-      color: 0x075e8a,
+      color: config.oceanColor,
       roughness: 0.1,
       metalness: 0.8,
       transparent: true,
-      opacity: 0.78,
+      opacity: config.oceanOpacity,
       flatShading: true
     });
     const oceanMesh = new THREE.Mesh(oceanGeo, oceanMat);
@@ -1027,17 +1265,17 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
 
       // Handle custom menu key binds matching parent
       if (key === "f") {
-        toggleVehicleMode();
+        toggleVehicleModeRef.current();
       }
       if (key === "r") {
-        performReload();
+        performReloadRef.current();
       }
       if (key === "v") {
         setViewMode((v) => (v === "fps" ? "third" : "fps"));
       }
       if (key === "h") {
         setCarHorn(true);
-        playSynthSound("hit");
+        playSynthSoundRef.current("hit");
       }
     };
 
@@ -1049,7 +1287,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       }
     };
 
-    // DRAG MOUSE LOOK CONTROLS (Iframe friendly!)
+    // DUAL-MODE FPS CONTROLS (Pointer Lock + Drag fallback for iframe)
     let isDragging = false;
     let prevMouseX = 0;
     let prevMouseY = 0;
@@ -1060,22 +1298,36 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       prevMouseY = e.clientY;
 
       // Shoot on left click
-      if (e.button === 0 && !stats.isDriving && viewMode === "fps") {
-        fireWeapon();
+      if (e.button === 0 && !isDrivingRef.current && viewModeRef.current === "fps") {
+        fireWeaponRef.current();
+        
+        // Request pointer lock when clicking inside the game window
+        if (containerRef.current && document.pointerLockElement !== containerRef.current) {
+          containerRef.current.requestPointerLock();
+        }
       }
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-      const deltaX = e.clientX - prevMouseX;
-      const deltaY = e.clientY - prevMouseY;
-      
-      prevMouseX = e.clientX;
-      prevMouseY = e.clientY;
+      const isLocked = document.pointerLockElement === containerRef.current;
+      if (isLocked) {
+        // Pointer Lock Active: direct precise movement coordinates
+        const sensitivity = 0.0025;
+        playerRef.current.yaw -= e.movementX * sensitivity;
+        playerRef.current.pitch -= e.movementY * sensitivity;
+      } else {
+        // Drag To Look Fallback (Universal/Iframe resilient)
+        if (!isDragging) return;
+        const deltaX = e.clientX - prevMouseX;
+        const deltaY = e.clientY - prevMouseY;
+        
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
 
-      const sensitivity = 0.004;
-      playerRef.current.yaw -= deltaX * sensitivity;
-      playerRef.current.pitch -= deltaY * sensitivity;
+        const sensitivity = 0.004;
+        playerRef.current.yaw -= deltaX * sensitivity;
+        playerRef.current.pitch -= deltaY * sensitivity;
+      }
 
       // Restrict pitch (look up/down limits)
       playerRef.current.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, playerRef.current.pitch));
@@ -1085,11 +1337,17 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       isDragging = false;
     };
 
+    const handlePointerLockChange = () => {
+      const isLocked = document.pointerLockElement === containerRef.current;
+      setPointerLocked(isLocked);
+    };
+
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     containerRef.current.addEventListener("mousedown", handleMouseDown);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("pointerlockchange", handlePointerLockChange);
 
     // ─── REAL-TIME GAME LOOP ──────────────────────────────────────────────────
 
@@ -1099,6 +1357,9 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
     const gameLoop = (now: number) => {
       const dt = Math.min(0.1, (now - lastTime) / 1000); // delta time capped to prevent teleport glitches
       lastTime = now;
+
+      const car = carRef.current;
+      const player = playerRef.current;
 
       // Wave physics simulation for water shader
       const waveTime = now / 1000;
@@ -1122,6 +1383,31 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
         if (Math.abs(trg.mesh.position.x) > 100) {
           trg.direction *= -1;
         }
+
+        // --- Drone Collision check vs Player / Car ---
+        const playerPos = new THREE.Vector3(player.x, player.y + 1, player.z);
+        const distToPlayer = trg.mesh.position.distanceTo(playerPos);
+        if (distToPlayer < 2.5) {
+          playSynthSoundRef.current("hit");
+          createSparks(trg.mesh.position, 0xff7700, 15);
+          onUpdateStatsRef.current((prev) => ({
+            ...prev,
+            health: Math.max(0, prev.health - 6)
+          }));
+          // Bounce drone back
+          trg.direction *= -1;
+          trg.mesh.position.x += trg.direction * 3.0;
+        }
+
+        const carPos = new THREE.Vector3(car.x, car.y + 0.8, car.z);
+        const distToCar = trg.mesh.position.distanceTo(carPos);
+        if (distToCar < 3.0) {
+          playSynthSoundRef.current("hit");
+          createSparks(trg.mesh.position, 0xffaa00, 15);
+          // Bounce drone back
+          trg.direction *= -1;
+          trg.mesh.position.x += trg.direction * 3.0;
+        }
       });
 
       // Update flying bullet lasers and bullet collision check
@@ -1140,7 +1426,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
           if (dist < 2.5) {
             bulletHit = true;
             // Explosion sound & sparks
-            playSynthSound("explosion");
+            playSynthSoundRef.current("explosion");
             createSparks(trg.mesh.position, 0xff3b30, 25);
 
             // Relocate drone somewhere else
@@ -1151,7 +1437,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
             );
 
             // Increment Kills & score!
-            onUpdateStats((prev) => ({
+            onUpdateStatsRef.current((prev) => ({
               ...prev,
               kills: prev.kills + 1,
               score: prev.score + 150
@@ -1198,11 +1484,17 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       particlesRef.current = nextParticles;
 
       // ─── VEHICLE PHYSICS ENGINE & UPDATES ──────────────────────────────────
-      const car = carRef.current;
-      const player = playerRef.current;
+
+      // Update camera rotation based on the Look joystick (mobile/touch)
+      if (lookStickValue.current.x !== 0 || lookStickValue.current.y !== 0) {
+        const lookSpeed = 2.2; // rads per sec rotation speed
+        player.yaw += lookStickValue.current.x * lookSpeed * dt;
+        player.pitch -= lookStickValue.current.y * lookSpeed * dt;
+        player.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, player.pitch));
+      }
 
       // Steering wheel roll/friction values
-      if (stats.isDriving) {
+      if (isDrivingRef.current) {
         // Accelerate
         if (keysPressed.current["w"]) {
           car.speed += car.acceleration * dt;
@@ -1215,13 +1507,14 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
         }
 
         // Steer (with speed factor)
+        // Corrected: Pressing 'a' (left) decreases angle (turns left in our coordinates), pressing 'd' (right) increases it.
         const turnMult = car.speed < 0 ? -1 : 1;
         if (keysPressed.current["a"]) {
-          car.angle += car.turnSpeed * dt * turnMult * Math.min(1.0, Math.abs(car.speed) / 6);
-          car.steering = Math.min(0.5, car.steering + 2 * dt);
-        } else if (keysPressed.current["d"]) {
           car.angle -= car.turnSpeed * dt * turnMult * Math.min(1.0, Math.abs(car.speed) / 6);
           car.steering = Math.max(-0.5, car.steering - 2 * dt);
+        } else if (keysPressed.current["d"]) {
+          car.angle += car.turnSpeed * dt * turnMult * Math.min(1.0, Math.abs(car.speed) / 6);
+          car.steering = Math.min(0.5, car.steering + 2 * dt);
         } else {
           car.steering *= 0.8; // Return straight
         }
@@ -1233,8 +1526,53 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
         car.x += Math.sin(car.angle) * car.speed * dt;
         car.z += Math.cos(car.angle) * car.speed * dt;
 
+        // --- CAR BOUNDARY & COLLISION PHYSICS ---
+        // 1. Map boundary collision so car doesn't fall off the 3D grid
+        const mapLimit = 240;
+        if (car.x < -mapLimit) { car.x = -mapLimit; car.speed = -car.speed * 0.35; }
+        if (car.x > mapLimit) { car.x = mapLimit; car.speed = -car.speed * 0.35; }
+        if (car.z < -mapLimit) { car.z = -mapLimit; car.speed = -car.speed * 0.35; }
+        if (car.z > mapLimit) { car.z = mapLimit; car.speed = -car.speed * 0.35; }
+
+        // 2. Solid building collision box check with bounce-back response
+        const carRadius = 1.8;
+        buildings.forEach((bld) => {
+          if (car.y >= 0 && car.y <= bld.height) {
+            const minX = bld.x - bld.width / 2 - carRadius;
+            const maxX = bld.x + bld.width / 2 + carRadius;
+            const minZ = bld.z - bld.depth / 2 - carRadius;
+            const maxZ = bld.z + bld.depth / 2 + carRadius;
+
+            if (car.x > minX && car.x < maxX && car.z > minZ && car.z < maxZ) {
+              // Push out of bounding box along the shortest axis
+              const distL = Math.abs(car.x - minX);
+              const distR = Math.abs(car.x - maxX);
+              const distT = Math.abs(car.z - minZ);
+              const distB = Math.abs(car.z - maxZ);
+              const minDist = Math.min(distL, distR, distT, distB);
+
+              if (minDist === distL) car.x = minX;
+              else if (minDist === distR) car.x = maxX;
+              else if (minDist === distT) car.z = minZ;
+              else car.z = maxZ;
+
+              // Play solid crash/collision effects & damage on hard hits
+              if (Math.abs(car.speed) > 1.5) {
+                playSynthSoundRef.current("hit");
+                createSparks(new THREE.Vector3(car.x, car.y + 0.6, car.z), 0xff3b30, 15);
+                
+                onUpdateStatsRef.current((prev) => ({
+                  ...prev,
+                  health: Math.max(0, prev.health - Math.round(Math.abs(car.speed) * 0.8))
+                }));
+              }
+              car.speed = -car.speed * 0.35; // bounce back
+            }
+          }
+        });
+
         // Drive terrain height tracking with suspension bounce
-        const groundY = getTerrainHeight(car.x, car.z);
+        const groundY = getTerrainHeight(car.x, car.z, environmentRef.current);
         const oceanWaterY = getWaterDisplacement(car.x, car.z, waveTime);
 
         // OCEAN BUOYANCY WATER PHYSICS:
@@ -1246,7 +1584,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
 
           // Splash particles occasionally
           if (Math.abs(car.speed) > 1.5 && Math.random() > 0.85) {
-            playSynthSound("splash");
+            playSynthSoundRef.current("splash");
             createSparks(new THREE.Vector3(car.x, car.y - 0.2, car.z), 0x38bdf8, 12);
           }
         } else {
@@ -1276,7 +1614,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
         player.z = car.z;
 
         // Sync stats UI dashboard
-        onUpdateStats((prev) => ({
+        onUpdateStatsRef.current((prev) => ({
           ...prev,
           speed: Math.round(Math.abs(car.speed) * 3), // Speed dial
           rpm: Math.min(9000, Math.round(3000 + Math.abs(car.speed) * 140)),
@@ -1285,13 +1623,13 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
 
         // Drain car fuel
         if (Math.abs(car.speed) > 0.1 && Math.random() > 0.9) {
-          onUpdateStats((prev) => ({
+          onUpdateStatsRef.current((prev) => ({
             ...prev,
             carFuel: Math.max(0, prev.carFuel - 1)
           }));
         }
 
-        updateEngineAudio(car.speed, true);
+        updateEngineAudioRef.current(car.speed, true);
       } else {
         // ─── PLAYER WALK ON-FOOT FPS CONTROLS ────────────────────────────────
         let moveX = 0;
@@ -1324,6 +1662,77 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
         player.x += player.vx * dt;
         player.z += player.vz * dt;
 
+        // --- PLAYER COLLISION PHYSICS ---
+        // 1. Map boundaries so player doesn't wander off the map limits
+        const playerMapLimit = 240;
+        if (player.x < -playerMapLimit) player.x = -playerMapLimit;
+        if (player.x > playerMapLimit) player.x = playerMapLimit;
+        if (player.z < -playerMapLimit) player.z = -playerMapLimit;
+        if (player.z > playerMapLimit) player.z = playerMapLimit;
+
+        // 2. Solid building walls collision check (with openings for doorways)
+        const pRadius = 0.6;
+        buildings.forEach((bld) => {
+          // Collision applies if the player's Y matches the building vertical layers
+          const isAtGroundFloor = player.y >= 0 && player.y < 4.8;
+          const isAtSecondFloor = player.y >= 4.8 && player.y < 9.8;
+
+          if (isAtGroundFloor || isAtSecondFloor) {
+            const dx = player.x - bld.x;
+            const dz = player.z - bld.z;
+            const hw = bld.width / 2;
+            const hd = bld.depth / 2;
+
+            // West wall (completely solid at -hw)
+            if (Math.abs(dz) < hd) {
+              const westX = -hw;
+              if (dx < westX && dx + pRadius > westX) {
+                player.x = bld.x + westX - pRadius;
+              }
+              if (dx > westX && dx - pRadius < westX) {
+                player.x = bld.x + westX + pRadius;
+              }
+
+              // East wall (completely solid at +hw)
+              const eastX = hw;
+              if (dx > eastX && dx - pRadius < eastX) {
+                player.x = bld.x + eastX + pRadius;
+              }
+              if (dx < eastX && dx + pRadius > eastX) {
+                player.x = bld.x + eastX - pRadius;
+              }
+            }
+
+            // North and South walls (solid except for the middle 1/3 doorway on ground floor)
+            if (Math.abs(dx) < hw) {
+              const northZ = -hd;
+              const southZ = hd;
+              // Doorway is on south wall (or north depending on entry), let's keep middle 1/3 clear for entrance on ground floor
+              const isInDoorwayZone = Math.abs(dx) < (bld.width / 6);
+
+              // North Wall
+              if (!isInDoorwayZone || isAtSecondFloor) {
+                if (dz < northZ && dz + pRadius > northZ) {
+                  player.z = bld.z + northZ - pRadius;
+                }
+                if (dz > northZ && dz - pRadius < northZ) {
+                  player.z = bld.z + northZ + pRadius;
+                }
+              }
+
+              // South Wall
+              if (!isInDoorwayZone || isAtSecondFloor) {
+                if (dz > southZ && dz - pRadius < southZ) {
+                  player.z = bld.z + southZ + pRadius;
+                }
+                if (dz < southZ && dz + pRadius > southZ) {
+                  player.z = bld.z + southZ - pRadius;
+                }
+              }
+            }
+          }
+        });
+
         // Jump physical simulation
         const gravity = 22.0;
         if (!player.isGrounded) {
@@ -1332,7 +1741,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
         }
 
         // Terrain height detection below player
-        const floorY = getTerrainHeight(player.x, player.z);
+        const floorY = getTerrainHeight(player.x, player.z, environmentRef.current);
         const waterHeight = getWaterDisplacement(player.x, player.z, waveTime);
 
         // Check if player is on the stairs of Buildings (HQ Outpost or Control Tower)
@@ -1411,10 +1820,10 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
 
         // Damage warning if player falls into toxic water/depth bounds
         if (player.isSwimming && Math.random() > 0.96) {
-          onUpdateStats((prev) => {
+          onUpdateStatsRef.current((prev) => {
             const nextHealth = Math.max(0, prev.health - 2);
             if (nextHealth === 0) {
-              setTimeout(() => onGameOver(), 500);
+              setTimeout(() => onGameOverRef.current(), 500);
             }
             return {
               ...prev,
@@ -1425,7 +1834,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       }
 
       // Sync real-time positions for the tactical map in the parent HUD
-      onUpdateStats((prev) => {
+      onUpdateStatsRef.current((prev) => {
         const px = prev.playerX ?? 0;
         const pz = prev.playerZ ?? 10;
         const cx = prev.carX ?? 12;
@@ -1444,12 +1853,12 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
           playerZ: player.z,
           carX: car.x,
           carZ: car.z,
-          isDriving: stats.isDriving
+          isDriving: isDrivingRef.current
         };
       });
 
       // ─── CAMERA PERSPECTIVE MATRIX TRANSITIONS ─────────────────────────────
-      if (viewMode === "fps") {
+      if (viewModeRef.current === "fps") {
         // First person look from player height Y
         camera.position.set(player.x, player.y + player.height - 0.2, player.z);
         
@@ -1465,10 +1874,23 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
         const distance = 8.5;
         const height = 3.5;
         
-        const carYaw = car.angle;
-        const targetCamX = car.x - Math.sin(carYaw) * distance;
-        const targetCamY = car.y + height;
-        const targetCamZ = car.z - Math.cos(carYaw) * distance;
+        // Let player.yaw and player.pitch act as dynamic orbit offsets around the car!
+        const cameraYaw = car.angle + player.yaw;
+        const cameraPitch = player.pitch; // tilt up/down
+        
+        // Calculate camera position orbiting the car
+        const hDist = distance * Math.cos(cameraPitch);
+        const vDist = height + distance * Math.sin(cameraPitch);
+        
+        const targetCamX = car.x - Math.sin(cameraYaw) * hDist;
+        const targetCamY = car.y + vDist;
+        const targetCamZ = car.z - Math.cos(cameraYaw) * hDist;
+
+        // Auto-center camera back behind the car slowly if there's no active look joystick input or mouse dragging
+        if (lookStickValue.current.x === 0 && lookStickValue.current.y === 0 && !isDragging) {
+          player.yaw += (0 - player.yaw) * 2.2 * dt;
+          player.pitch += (0 - player.pitch) * 2.2 * dt;
+        }
 
         // Smooth camera lag/dampening
         camera.position.x += (targetCamX - camera.position.x) * 6 * dt;
@@ -1494,6 +1916,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("pointerlockchange", handlePointerLockChange);
       window.removeEventListener("click", startAudioContext);
       
       if (containerRef.current && renderer.domElement) {
@@ -1507,7 +1930,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, stats.isDriving, stats.ammo, onUpdateStats, performReload]);
+  }, [environment]);
 
   // Handle window resizing
   useEffect(() => {
@@ -1528,25 +1951,18 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
       {/* 3D Canvas element target */}
       <div id="game-canvas-3d" ref={containerRef} className="w-full h-full" />
 
-      {/* Real Virtual Joystick Overlay */}
+      {/* ==================== MOBILE/TOUCH INPUT OVERLAY ==================== */}
+      {/* Left Movement Joystick */}
       <div 
         className="absolute bottom-6 left-6 z-30 pointer-events-auto flex flex-col items-center select-none"
         onMouseDown={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <div 
-          ref={joystickBaseRef}
-          className="relative w-28 h-28 rounded-full border-2 border-[#1240d6]/50 bg-black/75 shadow-[0_0_15px_rgba(18,64,214,0.3)] flex items-center justify-center cursor-grab active:cursor-grabbing"
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            handleJoystickStart(e.clientX, e.clientY);
-          }}
-          onTouchStart={(e) => {
-            e.stopPropagation();
-            if (e.touches.length > 0) {
-              handleJoystickStart(e.touches[0].clientX, e.touches[0].clientY);
-            }
-          }}
+          ref={moveJoystickBaseRef}
+          className="relative w-28 h-28 rounded-full border-2 border-[#1240d6]/50 bg-black/80 shadow-[0_0_15px_rgba(18,64,214,0.3)] flex items-center justify-center cursor-grab active:cursor-grabbing"
+          onPointerDown={handleMoveJoystickStart}
+          style={{ touchAction: "none" }}
         >
           {/* Futuristic grid inside the joystick base */}
           <div className="absolute inset-2 rounded-full border border-[rgba(18,64,214,0.15)] bg-[radial-gradient(ellipse_at_center,rgba(18,64,214,0.1)_0%,rgba(0,0,0,0)_70%)]" />
@@ -1554,20 +1970,119 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
           <div className="absolute h-full w-[1px] bg-[rgba(18,64,214,0.2)]" />
           
           {/* Inner bounds indicator */}
+          <div className="absolute w-14 h-14 rounded-full border border-dashed border-[#1240d6]/30" />
+
+          {/* Joystick handle/knob */}
+          <div 
+            className="absolute w-11 h-11 rounded-full bg-gradient-to-br from-[#1e293b] to-[#0f172a] border-2 border-[#1240d6] shadow-[0_0_10px_rgba(18,64,214,0.4)] flex items-center justify-center transition-transform duration-75"
+            style={{
+              transform: `translate(${moveJoystickKnob.x}px, ${moveJoystickKnob.y}px)`
+            }}
+          >
+            {/* Center core dot */}
+            <div className="w-2.5 h-2.5 rounded-full bg-[#1240d6] animate-pulse" />
+          </div>
+        </div>
+        <div className="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-widest mt-1.5 uppercase">MOVE CONTROLLER</div>
+      </div>
+
+      {/* Right Look / Aim Joystick */}
+      <div 
+        className="absolute bottom-6 right-6 z-30 pointer-events-auto flex flex-col items-center select-none"
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <div 
+          ref={lookJoystickBaseRef}
+          className="relative w-28 h-28 rounded-full border-2 border-[#7effc0]/50 bg-black/80 shadow-[0_0_15px_rgba(126,255,192,0.2)] flex items-center justify-center cursor-grab active:cursor-grabbing"
+          onPointerDown={handleLookJoystickStart}
+          style={{ touchAction: "none" }}
+        >
+          {/* Futuristic grid inside the joystick base */}
+          <div className="absolute inset-2 rounded-full border border-[rgba(126,255,192,0.15)] bg-[radial-gradient(ellipse_at_center,rgba(126,255,192,0.1)_0%,rgba(0,0,0,0)_70%)]" />
+          <div className="absolute w-full h-[1px] bg-[rgba(126,255,192,0.2)]" />
+          <div className="absolute h-full w-[1px] bg-[rgba(126,255,192,0.2)]" />
+          
+          {/* Inner bounds indicator */}
           <div className="absolute w-14 h-14 rounded-full border border-dashed border-[#7effc0]/30" />
 
           {/* Joystick handle/knob */}
           <div 
-            className="absolute w-12 h-12 rounded-full bg-gradient-to-br from-[#1e293b] to-[#0f172a] border-2 border-[#7effc0] shadow-[0_0_10px_rgba(126,255,192,0.4)] flex items-center justify-center transition-transform duration-75"
+            className="absolute w-11 h-11 rounded-full bg-gradient-to-br from-[#1e293b] to-[#0f172a] border-2 border-[#7effc0] shadow-[0_0_10px_rgba(126,255,192,0.4)] flex items-center justify-center transition-transform duration-75"
             style={{
-              transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)`
+              transform: `translate(${lookJoystickKnob.x}px, ${lookJoystickKnob.y}px)`
             }}
           >
             {/* Center core dot */}
-            <div className="w-3 h-3 rounded-full bg-[#7effc0] animate-pulse" />
+            <div className="w-2.5 h-2.5 rounded-full bg-[#7effc0] animate-pulse" />
           </div>
         </div>
-        <div className="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-widest mt-1.5">MOVEMENT STICK</div>
+        <div className="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-widest mt-1.5 uppercase">AIM / LOOK ROTATION</div>
+      </div>
+
+      {/* Floating Action Buttons (Guns, Jump, Interaction, reload) */}
+      <div className="absolute bottom-6 right-36 z-30 pointer-events-auto flex flex-col gap-3 select-none items-end">
+        {/* On-Foot actions (Jump, Reload, Fire) */}
+        {!stats.isDriving && (
+          <div className="flex gap-2.5 items-end">
+            {/* Reload Gun (R) */}
+            <button
+              onClick={() => performReload()}
+              className="w-11 h-11 rounded-full bg-[#06070a]/90 border border-[#7effc0]/40 text-[#7effc0] flex items-center justify-center active:bg-[#7effc0]/20 active:scale-95 shadow-[0_0_8px_rgba(126,255,192,0.15)] transition-all cursor-pointer"
+              title="Reload Weapon (R)"
+            >
+              <RotateCcw className="w-5 h-5" />
+            </button>
+
+            {/* Jump (Space) */}
+            <button
+              onPointerDown={() => { keysPressed.current[" "] = true; }}
+              onPointerUp={() => { keysPressed.current[" "] = false; }}
+              onPointerCancel={() => { keysPressed.current[" "] = false; }}
+              className="w-12 h-12 rounded-full bg-[#06070a]/90 border border-[#1240d6]/40 text-[#1240d6] flex items-center justify-center active:bg-[#1240d6]/20 active:scale-95 shadow-[0_0_8px_rgba(18,64,214,0.15)] transition-all cursor-pointer"
+              title="Jump (SPACE)"
+            >
+              <ArrowUp className="w-6 h-6" />
+            </button>
+
+            {/* Fire Weapon Big Trigger Button */}
+            <button
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                fireWeapon();
+              }}
+              className="w-16 h-16 rounded-full bg-[#cc1a2e]/10 border-2 border-[#cc1a2e] text-[#cc1a2e] flex items-center justify-center active:bg-[#cc1a2e]/30 active:scale-90 shadow-[0_0_20px_rgba(204,26,46,0.35)] transition-all cursor-pointer animate-pulse"
+              title="Fire Laser Weapon"
+            >
+              <Crosshair className="w-8 h-8 animate-spin-slow" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Floating Centered Tactical Console Controls */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex gap-3 select-none">
+        {/* Enter/Exit Vehicle Button (F) */}
+        <button
+          onClick={() => toggleVehicleMode()}
+          className={`px-4 py-2.5 rounded-sm font-['Share_Tech_Mono'] text-xs uppercase tracking-widest flex items-center gap-2 border shadow-lg transition-all cursor-pointer ${
+            stats.isDriving 
+              ? "bg-[#cc1a2e]/20 border-[#cc1a2e] text-[#ff4d5e] hover:bg-[#cc1a2e]/30" 
+              : "bg-[#06070a]/95 border-[#1240d6] text-[#7effc0] hover:bg-[#1240d6]/20"
+          }`}
+        >
+          <Car className="w-4 h-4" />
+          {stats.isDriving ? "EXIT VEHICLE" : "ENTER VEHICLE (F)"}
+        </button>
+
+        {/* Change Camera Perspective (V) */}
+        <button
+          onClick={() => setViewMode((v) => (v === "fps" ? "third" : "fps"))}
+          className="px-4 py-2.5 rounded-sm font-['Share_Tech_Mono'] text-xs uppercase tracking-widest flex items-center gap-2 bg-[#06070a]/95 border border-[rgba(18,64,214,0.5)] text-white hover:bg-[rgba(18,64,214,0.15)] shadow-lg transition-all cursor-pointer"
+        >
+          <Eye className="w-4 h-4" />
+          CAM {viewMode === "fps" ? "3RD" : "FPS"}
+        </button>
       </div>
 
       {/* Floating Tactical Prompt Layer */}
@@ -1579,69 +2094,7 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
         </div>
       )}
 
-      {/* Interactive controls hints overlay */}
-      {controlsHelp && (
-        <div className="absolute top-20 left-6 z-30 max-w-sm bg-[#06070a]/90 border border-[rgba(18,64,214,0.35)] p-4 rounded-sm font-['Exo_2'] pointer-events-auto">
-          <div className="flex justify-between items-center mb-3">
-            <span className="font-['Share_Tech_Mono'] text-[9px] text-[#1240d6] tracking-[0.3em]">CONTROLS MANUAL</span>
-            <button 
-              onClick={() => setControlsHelp(false)} 
-              className="text-[#4a6080] hover:text-[#b8cce0] font-bold text-xs"
-            >
-              × CLOSE
-            </button>
-          </div>
-          
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between border-b border-[rgba(18,64,214,0.1)] pb-1.5">
-              <span className="text-[#4a6080]">Walk / Drive</span>
-              <kbd className="font-['Share_Tech_Mono'] text-[10px] text-white border border-[rgba(18,64,214,0.4)] px-1.5 py-0.5 rounded-sm bg-[#1240d6]/10">W, A, S, D</kbd>
-            </div>
-            <div className="flex justify-between border-b border-[rgba(18,64,214,0.1)] pb-1.5">
-              <span className="text-[#4a6080]">Aim/Look around</span>
-              <span className="text-white">Drag Mouse</span>
-            </div>
-            <div className="flex justify-between border-b border-[rgba(18,64,214,0.1)] pb-1.5">
-              <span className="text-[#4a6080]">Fire Weapon</span>
-              <span className="text-white">Left Click</span>
-            </div>
-            <div className="flex justify-between border-b border-[rgba(18,64,214,0.1)] pb-1.5">
-              <span className="text-[#4a6080]">Jump (Walk mode)</span>
-              <kbd className="font-['Share_Tech_Mono'] text-[10px] text-white border border-[rgba(18,64,214,0.4)] px-1.5 py-0.5 rounded-sm bg-[#1240d6]/10">SPACE</kbd>
-            </div>
-            <div className="flex justify-between border-b border-[rgba(18,64,214,0.1)] pb-1.5">
-              <span className="text-[#4a6080]">Enter / Exit Vehicle</span>
-              <kbd className="font-['Share_Tech_Mono'] text-[10px] text-white border border-[rgba(18,64,214,0.4)] px-1.5 py-0.5 rounded-sm bg-[#1240d6]/10">F</kbd>
-            </div>
-            <div className="flex justify-between border-b border-[rgba(18,64,214,0.1)] pb-1.5">
-              <span className="text-[#4a6080]">Reload Gun</span>
-              <kbd className="font-['Share_Tech_Mono'] text-[10px] text-white border border-[rgba(18,64,214,0.4)] px-1.5 py-0.5 rounded-sm bg-[#1240d6]/10">R</kbd>
-            </div>
-            <div className="flex justify-between border-b border-[rgba(18,64,214,0.1)] pb-1.5">
-              <span className="text-[#4a6080]">Switch Cam Angle</span>
-              <kbd className="font-['Share_Tech_Mono'] text-[10px] text-white border border-[rgba(18,64,214,0.4)] px-1.5 py-0.5 rounded-sm bg-[#1240d6]/10">V</kbd>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#4a6080]">Car Horn</span>
-              <kbd className="font-['Share_Tech_Mono'] text-[10px] text-white border border-[rgba(18,64,214,0.4)] px-1.5 py-0.5 rounded-sm bg-[#1240d6]/10">H</kbd>
-            </div>
-          </div>
-          
-          <div className="mt-3 text-[10px] text-[#4a6080] border-t border-[rgba(18,64,214,0.15)] pt-2 leading-relaxed">
-            <span className="text-[#7effc0] font-bold">PRO-TIP:</span> Walking into the deep ocean water activates swimming. Stay away from deep ocean floor borders to prevent taking pressure/depth damage! Shoot the red drones for bonus score.
-          </div>
-        </div>
-      )}
 
-      {/* Floating open help menu button if closed */}
-      {!controlsHelp && (
-        <button
-          onClick={() => setControlsHelp(true)}
-          className="absolute top-20 left-6 z-30 p-2.5 bg-[#06070a]/80 border border-[rgba(18,64,214,0.4)] hover:border-[#1240d6] text-white rounded-sm font-['Share_Tech_Mono'] text-[10px] tracking-wider uppercase cursor-pointer"
-        >
-          <HelpCircle className="w-4 h-4" />
-        </button>
-      )}
 
       {/* Driving Dashboard Dial Overlay if Driving */}
       {stats.isDriving && (
@@ -1693,6 +2146,39 @@ export default function GameWorld({ stats, onUpdateStats, onGameOver, soundEnabl
             >
               HORN (H)
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* High-tech FPS Neon Crosshair */}
+      {viewMode === "fps" && !stats.isDriving && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none flex items-center justify-center">
+          {/* Subtle Outer ring */}
+          <div className="absolute w-8 h-8 rounded-full border border-[#7effc0]/20 animate-pulse" />
+          
+          {/* Crosshair lines */}
+          <div className="absolute w-4.5 h-[1.5px] bg-[#7effc0]/80" style={{ transform: 'translateX(-7px)' }} />
+          <div className="absolute w-4.5 h-[1.5px] bg-[#7effc0]/80" style={{ transform: 'translateX(7px)' }} />
+          <div className="absolute w-[1.5px] h-4.5 bg-[#7effc0]/80" style={{ transform: 'translateY(-7px)' }} />
+          <div className="absolute w-[1.5px] h-4.5 bg-[#7effc0]/80" style={{ transform: 'translateY(7px)' }} />
+
+          {/* Center pinpoint */}
+          <div className="w-1.5 h-1.5 rounded-full bg-[#7effc0] shadow-[0_0_6px_#7effc0]" />
+        </div>
+      )}
+
+      {/* FPS Look Unlocked Warning Layer */}
+      {viewMode === "fps" && !stats.isDriving && !pointerLocked && (
+        <div className="absolute top-[22%] left-1/2 -translate-x-1/2 z-30 pointer-events-none text-center bg-[#06070a]/95 border border-[#1240d6]/50 p-4 rounded shadow-[0_0_20px_rgba(18,64,214,0.3)] max-w-xs select-none">
+          <div className="text-[#7effc0] font-['Share_Tech_Mono'] text-xs tracking-[0.2em] uppercase mb-1.5 flex items-center justify-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#cc1a2e] animate-ping" />
+            MOUSE LOOK UNLOCKED
+          </div>
+          <div className="text-[#b8cce0] text-[10px] leading-relaxed font-sans opacity-95 mb-2">
+            Click anywhere on the screen to lock your cursor for continuous, fluid FPS mouse looking.
+          </div>
+          <div className="text-[8.5px] text-[#4a6080] font-mono tracking-widest uppercase">
+            [ CLICK TO LOCK MOUSE ]
           </div>
         </div>
       )}

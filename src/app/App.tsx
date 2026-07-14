@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import GameWorld from "./components/GameWorld";
 
 type Screen = "landing" | "menu" | "settings" | "controls" | "hud" | "gameover";
@@ -374,7 +375,23 @@ function StartMenu({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   );
 }
 
-function SettingsMenu({ onBack }: { onBack: () => void }) {
+function SettingsMenu({
+  onBack,
+  isFullscreen,
+  onToggleFullscreen,
+  environment = "cyber",
+  onEnvironmentChange,
+  invertJoystickX = true,
+  onInvertJoystickXChange,
+}: {
+  onBack: () => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
+  environment: "cyber" | "desert" | "volcano" | "arctic";
+  onEnvironmentChange: (env: "cyber" | "desert" | "volcano" | "arctic") => void;
+  invertJoystickX: boolean;
+  onInvertJoystickXChange: (v: boolean) => void;
+}) {
   const [tab, setTab] = useState<"graphics" | "audio" | "gameplay">("graphics");
   const [values, setValues] = useState({
     resolution: "2560×1440",
@@ -395,6 +412,565 @@ function SettingsMenu({ onBack }: { onBack: () => void }) {
 
   const set = (k: keyof typeof values, v: unknown) =>
     setValues((prev) => ({ ...prev, [k]: v }));
+
+  const handleExportToHtml = () => {
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CYBER FPS ARENA - STANDALONE EXPORT</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@600;700&family=Exo+2:wght@400;600&display=swap');
+    body { margin: 0; overflow: hidden; background-color: #04060e; user-select: none; }
+  </style>
+</head>
+<body class="font-['Exo_2'] text-[#b8cce0] bg-[#04060e] relative h-screen w-screen overflow-hidden">
+  <div id="startScreen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#06070a] px-6 text-center">
+    <div class="max-w-md border border-[rgba(18,64,214,0.3)] bg-[#0c101e]/85 p-8 rounded-sm shadow-[0_0_50px_rgba(18,64,214,0.15)] relative">
+      <div class="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-[#7effc0]"></div>
+      <div class="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-[#7effc0]"></div>
+      <div class="font-['Share_Tech_Mono'] text-xs text-[#1240d6] tracking-[0.4em] uppercase mb-1">STANDALONE EXPORT</div>
+      <h1 class="font-['Rajdhani'] font-bold text-4xl text-white tracking-widest uppercase mb-6">CYBER ARENA</h1>
+      <p class="text-xs text-[#4a6080] mb-8 leading-relaxed font-['Share_Tech_Mono']">
+        Interactive self-contained offline build of the simulator. Drive, aim, shoot red drones, and explore the landscape in standard 3D. Supported on both desktop and mobile devices.
+      </p>
+      <button id="startButton" class="w-full bg-[#1240d6] border border-[#1a52ff] hover:bg-[#1a52ff] text-white font-['Share_Tech_Mono'] py-3.5 px-6 rounded-sm cursor-pointer uppercase transition-all tracking-[0.2em] text-xs shadow-[0_0_15px_rgba(18,64,214,0.3)]">
+        LAUNCH ARENA
+      </button>
+    </div>
+  </div>
+
+  <div id="hud" class="absolute inset-0 z-30 pointer-events-none hidden flex-col justify-between p-6">
+    <div class="flex justify-between items-start w-full">
+      <div class="flex gap-4">
+        <div class="bg-[#06070a]/80 border border-[rgba(18,64,214,0.3)] p-3 rounded-sm flex flex-col min-w-[120px]">
+          <span class="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-widest uppercase mb-1">HEALTH SYS</span>
+          <div class="flex items-center gap-2">
+            <div class="h-2 w-20 bg-[#1240d6]/20 border border-[rgba(18,64,214,0.4)] overflow-hidden rounded-sm">
+              <div id="healthFill" class="h-full bg-[#7effc0]" style="width: 100%;"></div>
+            </div>
+            <span id="healthVal" class="font-['Share_Tech_Mono'] text-xs text-[#7effc0] font-bold">100%</span>
+          </div>
+        </div>
+        <div class="bg-[#06070a]/80 border border-[rgba(18,64,214,0.3)] p-3 rounded-sm flex flex-col min-w-[100px]">
+          <span class="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-widest uppercase mb-1">SCORE SYS</span>
+          <span id="killsVal" class="font-['Share_Tech_Mono'] text-xs text-white font-bold">KILLS: 00</span>
+        </div>
+      </div>
+      <div class="flex flex-col gap-2 pointer-events-auto items-end">
+        <div class="flex gap-1 bg-[#06070a]/80 border border-[rgba(18,64,214,0.3)] p-1 rounded-sm">
+          <button id="btn-cyber" class="px-2 py-0.5 font-['Share_Tech_Mono'] text-[8px] border border-[#7effc0] text-[#7effc0] bg-[rgba(126,255,192,0.12)] cursor-pointer uppercase rounded-sm">CYBER</button>
+          <button id="btn-desert" class="px-2 py-0.5 font-['Share_Tech_Mono'] text-[8px] border border-transparent text-[#4a6080] hover:text-[#b8cce0] cursor-pointer uppercase rounded-sm">DESERT</button>
+          <button id="btn-volcano" class="px-2 py-0.5 font-['Share_Tech_Mono'] text-[8px] border border-transparent text-[#4a6080] hover:text-[#b8cce0] cursor-pointer uppercase rounded-sm">VOLCANO</button>
+        </div>
+        <div class="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-wider">WASD/KEYS TO MOVE | CLICK/TOUCH TO AIM & SHOOT</div>
+      </div>
+    </div>
+
+    <div class="flex justify-between items-end w-full">
+      <div class="bg-[#06070a]/80 border border-[rgba(18,64,214,0.3)] p-3 rounded-sm flex flex-col min-w-[120px]">
+        <span class="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-widest uppercase mb-1">ENGINE SPEED</span>
+        <div class="flex items-baseline gap-1">
+          <span id="speedVal" class="font-['Share_Tech_Mono'] text-xl text-white font-bold">0</span>
+          <span class="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080]">KM/H</span>
+        </div>
+      </div>
+      <div class="bg-[#06070a]/80 border border-[rgba(18,64,214,0.3)] p-3 rounded-sm flex flex-col min-w-[120px] items-end">
+        <span class="font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-widest uppercase mb-1">LASER SYS</span>
+        <div class="flex items-baseline gap-1">
+          <span id="ammoVal" class="font-['Share_Tech_Mono'] text-lg text-white font-bold">30</span>
+          <span class="font-['Share_Tech_Mono'] text-[10px] text-[#4a6080]">/ ∞</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="joysticksContainer" class="absolute inset-x-0 bottom-10 z-40 hidden justify-between px-10 pointer-events-none">
+    <div id="moveJoystick" class="w-24 h-24 rounded-full border border-[rgba(18,64,214,0.35)] bg-[#06070a]/60 backdrop-blur-xs relative flex items-center justify-center pointer-events-auto">
+      <div id="moveKnob" class="w-8 h-8 rounded-full border border-[#7effc0] bg-[#1240d6]/30 absolute transition-all duration-75"></div>
+    </div>
+    <button id="fireButton" class="w-16 h-16 rounded-full border border-[rgba(239,68,68,0.4)] bg-[rgba(239,68,68,0.15)] flex items-center justify-center font-['Share_Tech_Mono'] text-[10px] text-red-400 font-bold uppercase tracking-widest pointer-events-auto cursor-pointer">FIRE</button>
+    <div id="aimJoystick" class="w-24 h-24 rounded-full border border-[rgba(18,64,214,0.35)] bg-[#06070a]/60 backdrop-blur-xs relative flex items-center justify-center pointer-events-auto">
+      <div id="aimKnob" class="w-8 h-8 rounded-full border border-[#7effc0] bg-[#1240d6]/30 absolute transition-all duration-75"></div>
+    </div>
+  </div>
+
+  <div id="canvas-container" class="absolute inset-0 z-10"></div>
+
+  <script>
+    let scene, camera, renderer;
+    let car, drones = [], lasers = [], particles = [];
+    let keys = { w: false, a: false, s: false, d: false };
+    let speed = 0, steerAngle = 0;
+    let kills = 0, health = 100, ammo = 30;
+    let lookX = 0, lookY = 0;
+    let currentEnv = 'cyber';
+    let audioCtx, engineOsc, engineGain;
+
+    const envs = {
+      cyber: { sky: 0x04060e, fog: 0x04060e, fogDen: 0.015, grid: 0x1240d6 },
+      desert: { sky: 0x1a120b, fog: 0x1a120b, fogDen: 0.02, grid: 0xd97706 },
+      volcano: { sky: 0x110202, fog: 0x110202, fogDen: 0.025, grid: 0xdc2626 }
+    };
+
+    let isMoveDragging = false, isAimDragging = false;
+    let moveJoy = { x: 0, y: 0 }, aimJoy = { x: 0, y: 0 };
+    const invertX = ${invertJoystickX ? 'true' : 'false'};
+
+    document.getElementById('startButton').addEventListener('click', () => {
+      document.getElementById('startScreen').classList.add('hidden');
+      document.getElementById('hud').classList.remove('hidden');
+      if (window.innerWidth < 1024) {
+        document.getElementById('joysticksContainer').classList.remove('hidden');
+      }
+      initAudio();
+      initGame();
+      animate();
+    });
+
+    function initAudio() {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        engineOsc = audioCtx.createOscillator();
+        engineGain = audioCtx.createGain();
+        engineOsc.type = 'sawtooth';
+        engineOsc.frequency.setValueAtTime(30, audioCtx.currentTime);
+        engineGain.gain.setValueAtTime(0.01, audioCtx.currentTime);
+        engineOsc.connect(engineGain);
+        engineGain.connect(audioCtx.destination);
+        engineOsc.start();
+      } catch(e) {}
+    }
+
+    function playLaserSound() {
+      if(!audioCtx) return;
+      try {
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(900, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } catch(e) {}
+    }
+
+    function playExplosionSound() {
+      if(!audioCtx) return;
+      try {
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(10, audioCtx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.35);
+      } catch(e) {}
+    }
+
+    function updateEngineSound(s) {
+      if (engineOsc && audioCtx) {
+        try {
+          const freq = 30 + Math.abs(s) * 8;
+          engineOsc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.1);
+          const vol = 0.005 + (Math.abs(s) / 40) * 0.02;
+          engineGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+        } catch(e) {}
+      }
+    }
+
+    function initGame() {
+      const container = document.getElementById('canvas-container');
+      const w = container.clientWidth, h = container.clientHeight;
+
+      scene = new THREE.Scene();
+      const config = envs[currentEnv];
+      scene.background = new THREE.Color(config.sky);
+      scene.fog = new THREE.FogExp2(config.fog, config.fogDen);
+
+      camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 1000);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(w, h);
+      renderer.shadowMap.enabled = true;
+      container.appendChild(renderer.domElement);
+
+      const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambient);
+      const sun = new THREE.DirectionalLight(0xffffff, 1);
+      sun.position.set(50, 100, 50);
+      scene.add(sun);
+
+      const grid = new THREE.GridHelper(200, 50, config.grid, config.grid);
+      grid.position.y = -0.5;
+      grid.name = 'grid';
+      scene.add(grid);
+
+      car = new THREE.Group();
+      
+      const bodyGeo = new THREE.BoxGeometry(2, 0.8, 4);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.2 });
+      const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+      bodyMesh.castShadow = true;
+      car.add(bodyMesh);
+
+      const cabinGeo = new THREE.BoxGeometry(1.2, 0.6, 2);
+      const cabinMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.1, metalness: 0.9 });
+      const cabinMesh = new THREE.Mesh(cabinGeo, cabinMat);
+      cabinMesh.position.y = 0.6;
+      cabinMesh.position.z = -0.2;
+      car.add(cabinMesh);
+
+      const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
+      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+      const offsets = [
+        { x: -1.1, y: -0.2, z: 1.5 },
+        { x: 1.1, y: -0.2, z: 1.5 },
+        { x: -1.1, y: -0.2, z: -1.5 },
+        { x: 1.1, y: -0.2, z: -1.5 }
+      ];
+      offsets.forEach(off => {
+        const wMesh = new THREE.Mesh(wheelGeo, wheelMat);
+        wMesh.rotation.z = Math.PI / 2;
+        wMesh.position.set(off.x, off.y, off.z);
+        car.add(wMesh);
+      });
+
+      scene.add(car);
+
+      createDrones();
+
+      window.addEventListener('keydown', e => {
+        if(e.key === 'w' || e.key === 'ArrowUp') keys.w = true;
+        if(e.key === 's' || e.key === 'ArrowDown') keys.s = true;
+        if(e.key === 'a' || e.key === 'ArrowLeft') keys.a = true;
+        if(e.key === 'd' || e.key === 'ArrowRight') keys.d = true;
+        if(e.key === ' ') fireLaser();
+      });
+
+      window.addEventListener('keyup', e => {
+        if(e.key === 'w' || e.key === 'ArrowUp') keys.w = false;
+        if(e.key === 's' || e.key === 'ArrowDown') keys.s = false;
+        if(e.key === 'a' || e.key === 'ArrowLeft') keys.a = false;
+        if(e.key === 'd' || e.key === 'ArrowRight') keys.d = false;
+      });
+
+      window.addEventListener('click', e => {
+        if (!document.getElementById('startScreen').classList.contains('hidden') || window.innerWidth < 1024) return;
+        fireLaser();
+      });
+
+      window.addEventListener('mousemove', e => {
+        if (window.innerWidth >= 1024) {
+          lookX -= e.movementX * 0.003;
+          lookY = Math.max(-0.5, Math.min(0.5, lookY - e.movementY * 0.003));
+        }
+      });
+
+      setupMobileControls();
+
+      document.getElementById('btn-cyber').addEventListener('click', () => switchEnvironment('cyber'));
+      document.getElementById('btn-desert').addEventListener('click', () => switchEnvironment('desert'));
+      document.getElementById('btn-volcano').addEventListener('click', () => switchEnvironment('volcano'));
+
+      window.addEventListener('resize', onResize);
+    }
+
+    function createDrones() {
+      drones.forEach(d => scene.remove(d));
+      drones = [];
+
+      const droneGeo = new THREE.OctahedronGeometry(1.2, 0);
+      const droneMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.1, emissive: 0xef4444, emissiveIntensity: 0.5 });
+
+      for(let i = 0; i < 8; i++) {
+        const drone = new THREE.Mesh(droneGeo, droneMat);
+        resetDrone(drone);
+        scene.add(drone);
+        drones.push(drone);
+      }
+    }
+
+    function resetDrone(d) {
+      d.position.set(
+        (Math.random() - 0.5) * 120,
+        4 + Math.random() * 8,
+        (Math.random() - 0.5) * 120
+      );
+      d.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+      d.userData = { bobSpeed: 1 + Math.random() * 2, bobHeight: 0.5 + Math.random(), baseHeight: d.position.y };
+    }
+
+    function switchEnvironment(env) {
+      if(!envs[env]) return;
+      currentEnv = env;
+      
+      const config = envs[env];
+      scene.background = new THREE.Color(config.sky);
+      scene.fog.color = new THREE.Color(config.sky);
+      scene.fog.density = config.fogDen;
+
+      ['btn-cyber', 'btn-desert', 'btn-volcano'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (id === 'btn-' + env) {
+          btn.className = "px-2 py-0.5 font-['Share_Tech_Mono'] text-[8px] border border-[#7effc0] text-[#7effc0] bg-[rgba(126,255,192,0.12)] cursor-pointer uppercase rounded-sm";
+        } else {
+          btn.className = "px-2 py-0.5 font-['Share_Tech_Mono'] text-[8px] border border-transparent text-[#4a6080] hover:text-[#b8cce0] cursor-pointer uppercase rounded-sm";
+        }
+      });
+
+      const oldGrid = scene.getObjectByName('grid');
+      if (oldGrid) scene.remove(oldGrid);
+      const grid = new THREE.GridHelper(200, 50, config.grid, config.grid);
+      grid.position.y = -0.5;
+      grid.name = 'grid';
+      scene.add(grid);
+    }
+
+    function fireLaser() {
+      if (ammo <= 0) return;
+      ammo--;
+      document.getElementById('ammoVal').innerText = ammo;
+      setTimeout(() => { ammo = 30; document.getElementById('ammoVal').innerText = ammo; }, 1200);
+
+      playLaserSound();
+
+      const laserGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
+      const laserMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+      const laser = new THREE.Mesh(laserGeo, laserMat);
+
+      laser.rotation.x = Math.PI / 2;
+      laser.rotation.y = car.rotation.y;
+      
+      laser.position.copy(car.position);
+      laser.position.y += 0.4;
+      
+      const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(car.quaternion).normalize();
+      laser.userData = { dir: dir, age: 0 };
+      
+      scene.add(laser);
+      lasers.push(laser);
+    }
+
+    function setupMobileControls() {
+      const moveJoystick = document.getElementById('moveJoystick');
+      const moveKnob = document.getElementById('moveKnob');
+      const aimJoystick = document.getElementById('aimJoystick');
+      const aimKnob = document.getElementById('aimKnob');
+      const fireButton = document.getElementById('fireButton');
+
+      fireButton.addEventListener('pointerdown', fireLaser);
+
+      moveJoystick.addEventListener('pointerdown', e => { isMoveDragging = true; e.stopPropagation(); });
+      window.addEventListener('pointermove', e => {
+        if (isMoveDragging) {
+          const rect = moveJoystick.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const dx = e.clientX - centerX;
+          const dy = e.clientY - centerY;
+          const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40);
+          const angle = Math.atan2(dy, dx);
+          
+          const knX = Math.cos(angle) * dist;
+          const knY = Math.sin(angle) * dist;
+          moveKnob.style.transform = 'translate(' + knX + 'px, ' + knY + 'px)';
+
+          moveJoy.x = knX / 40;
+          moveJoy.y = knY / 40;
+        }
+      });
+
+      aimJoystick.addEventListener('pointerdown', e => { isAimDragging = true; e.stopPropagation(); });
+      window.addEventListener('pointermove', e => {
+        if (isAimDragging) {
+          const rect = aimJoystick.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const dx = e.clientX - centerX;
+          const dy = e.clientY - centerY;
+          const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40);
+          const angle = Math.atan2(dy, dx);
+          
+          const knX = Math.cos(angle) * dist;
+          const knY = Math.sin(angle) * dist;
+          aimKnob.style.transform = 'translate(' + knX + 'px, ' + knY + 'px)';
+
+          aimJoy.x = knX / 40;
+          aimJoy.y = knY / 40;
+        }
+      });
+
+      window.addEventListener('pointerup', () => {
+        if (isMoveDragging) {
+          isMoveDragging = false;
+          moveKnob.style.transform = 'translate(0px, 0px)';
+          moveJoy = { x: 0, y: 0 };
+        }
+        if (isAimDragging) {
+          isAimDragging = false;
+          aimKnob.style.transform = 'translate(0px, 0px)';
+          aimJoy = { x: 0, y: 0 };
+        }
+      });
+    }
+
+    function onResize() {
+      const container = document.getElementById('canvas-container');
+      const w = container.clientWidth, h = container.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+
+    function spawnExplosionParticles(pos) {
+      const count = 15;
+      const geom = new THREE.BufferGeometry();
+      const positions = [];
+      const velocities = [];
+
+      for(let i = 0; i < count; i++) {
+        positions.push(pos.x, pos.y, pos.z);
+        velocities.push(
+          (Math.random() - 0.5) * 10,
+          (Math.random() - 0.1) * 8,
+          (Math.random() - 0.5) * 10
+        );
+      }
+
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const mat = new THREE.PointsMaterial({ color: 0xef4444, size: 0.4, transparent: true, opacity: 1 });
+      const system = new THREE.Points(geom, mat);
+      
+      system.userData = { velocities: velocities, age: 0, mat: mat };
+      scene.add(system);
+      particles.push(system);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      let fwd = 0, turn = 0;
+      if (keys.w) fwd = 1.2;
+      if (keys.s) fwd = -0.8;
+      if (keys.a) turn = -1;
+      if (keys.d) turn = 1;
+
+      if (isMoveDragging) {
+        fwd = -moveJoy.y * 1.2;
+        const actualX = invertX ? -moveJoy.x : moveJoy.x;
+        turn = actualX;
+      }
+
+      speed += fwd * 0.15;
+      speed *= 0.95;
+      steerAngle += (turn * 0.05 - steerAngle) * 0.1;
+
+      car.rotation.y -= steerAngle * (speed * 0.015);
+      
+      const forwardDir = new THREE.Vector3(0, 0, 1).applyQuaternion(car.quaternion);
+      car.position.addScaledVector(forwardDir, speed * 0.1);
+
+      car.position.x = Math.max(-95, Math.min(95, car.position.x));
+      car.position.z = Math.max(-95, Math.min(95, car.position.z));
+
+      updateEngineSound(speed);
+
+      if (isAimDragging) {
+        const actualAimX = invertX ? -aimJoy.x : aimJoy.x;
+        lookX += actualAimX * 0.04;
+        lookY = Math.max(-0.5, Math.min(0.5, lookY - aimJoy.y * 0.04));
+      }
+
+      const offset = new THREE.Vector3(0, 3.5, -9).applyQuaternion(car.quaternion);
+      camera.position.copy(car.position).add(offset);
+      
+      const targetLookAt = new THREE.Vector3().copy(car.position).add(new THREE.Vector3(0, 1.5, 0));
+      camera.lookAt(targetLookAt);
+
+      camera.rotation.y += lookX;
+      camera.rotation.x += lookY;
+
+      const time = Date.now() * 0.001;
+      drones.forEach(d => {
+        d.position.y = d.userData.baseHeight + Math.sin(time * d.userData.bobSpeed) * d.userData.bobHeight;
+        d.rotation.y += 0.01;
+      });
+
+      for(let i = lasers.length - 1; i >= 0; i--) {
+        const l = lasers[i];
+        l.position.addScaledVector(l.userData.dir, 2.5);
+        l.userData.age++;
+
+        let hit = false;
+        for(let j = 0; j < drones.length; j++) {
+          const d = drones[j];
+          if (l.position.distanceTo(d.position) < 3) {
+            spawnExplosionParticles(d.position);
+            playExplosionSound();
+            resetDrone(d);
+            kills++;
+            document.getElementById('killsVal').innerText = 'KILLS: ' + (kills < 10 ? '0' + kills : kills);
+            hit = true;
+            break;
+          }
+        }
+
+        if (hit || l.userData.age > 80) {
+          scene.remove(l);
+          lasers.splice(i, 1);
+        }
+      }
+
+      for(let i = particles.length - 1; i >= 0; i--) {
+        const sys = particles[i];
+        const posAttr = sys.geometry.attributes.position;
+        const v = sys.userData.velocities;
+        sys.userData.age++;
+
+        for(let j = 0; j < posAttr.count; j++) {
+          posAttr.setX(j, posAttr.getX(j) + v[j*3] * 0.015);
+          posAttr.setY(j, posAttr.getY(j) + v[j*3+1] * 0.015);
+          posAttr.setZ(j, posAttr.getZ(j) + v[j*3+2] * 0.015);
+        }
+        posAttr.needsUpdate = true;
+        
+        sys.userData.mat.opacity = Math.max(0, 1 - sys.userData.age / 40);
+
+        if (sys.userData.age > 40) {
+          scene.remove(sys);
+          particles.splice(i, 1);
+        }
+      }
+
+      document.getElementById('speedVal').innerText = Math.round(Math.abs(speed) * 8);
+
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cyberpunk-arena-offline.html";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const tabs = ["graphics", "audio", "gameplay"] as const;
 
@@ -447,6 +1023,14 @@ function SettingsMenu({ onBack }: { onBack: () => void }) {
                   <option key={r} value={r}>{r}</option>
                 ))}
               </select>
+            </SettingRow>
+            <SettingRow label="DISPLAY MODE" description="Toggle fullscreen display mode">
+              <button
+                onClick={onToggleFullscreen}
+                className="bg-[#0e1320] border border-[rgba(18,64,214,0.3)] hover:border-[#1240d6] text-[#b8cce0] hover:text-[#7effc0] font-['Share_Tech_Mono'] text-xs px-3 py-2 focus:outline-none cursor-pointer uppercase transition-colors"
+              >
+                {isFullscreen ? "WINDOWED" : "FULLSCREEN"}
+              </button>
             </SettingRow>
             <SettingRow label="FIELD OF VIEW" description={`Current: ${values.fov}°`}>
               <SliderControl value={values.fov} min={60} max={120} onChange={(v) => set("fov", v)} />
@@ -517,11 +1101,33 @@ function SettingsMenu({ onBack }: { onBack: () => void }) {
                 ))}
               </select>
             </SettingRow>
+            <SettingRow label="LANDSCAPE ARENA" description="Primary simulation terrain and atmosphere">
+              <select
+                value={environment}
+                onChange={(e) => onEnvironmentChange(e.target.value as any)}
+                className="bg-[#0e1320] border border-[rgba(18,64,214,0.3)] text-[#7effc0] font-['Share_Tech_Mono'] text-xs px-3 py-2 focus:outline-none focus:border-[#1240d6] uppercase"
+              >
+                {(["cyber", "desert", "volcano", "arctic"] as const).map((env) => (
+                  <option key={env} value={env}>{env}</option>
+                ))}
+              </select>
+            </SettingRow>
             <SettingRow label="HUD DISPLAY" description="Toggle heads-up display elements">
               <ToggleControl value={values.hud} onChange={(v) => set("hud", v)} />
             </SettingRow>
             <SettingRow label="HIT MARKERS" description="Show damage confirmation markers">
               <ToggleControl value={values.hitMarkers} onChange={(v) => set("hitMarkers", v)} />
+            </SettingRow>
+            <SettingRow label="INVERT JOYSTICK X" description="Invert horizontal X-axis on both virtual joysticks">
+              <ToggleControl value={invertJoystickX} onChange={onInvertJoystickXChange} />
+            </SettingRow>
+            <SettingRow label="OFFLINE STANDALONE EXPORT" description="Download a self-contained single-file HTML version of the simulation">
+              <button
+                onClick={handleExportToHtml}
+                className="bg-[#1240d6] border border-[#1a52ff] hover:bg-[#1a52ff] text-white font-['Share_Tech_Mono'] text-xs px-4 py-2 hover:shadow-[0_0_12px_rgba(26,82,255,0.4)] transition-all cursor-pointer rounded-sm tracking-wider uppercase font-semibold"
+              >
+                DOWNLOAD HTML
+              </button>
             </SettingRow>
           </div>
         )}
@@ -696,7 +1302,23 @@ function ControlsScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-function HUDDisplay({ onNavigate }: { onNavigate: (s: Screen) => void }) {
+function HUDDisplay({
+  onNavigate,
+  isFullscreen,
+  onToggleFullscreen,
+  environment = "cyber",
+  onEnvironmentChange,
+  invertJoystickX = true,
+  onInvertJoystickXChange,
+}: {
+  onNavigate: (s: Screen) => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
+  environment: "cyber" | "desert" | "volcano" | "arctic";
+  onEnvironmentChange: (env: "cyber" | "desert" | "volcano" | "arctic") => void;
+  invertJoystickX: boolean;
+  onInvertJoystickXChange: (v: boolean) => void;
+}) {
   const [stats, setStats] = useState({
     health: 100,
     armor: 100,
@@ -789,6 +1411,8 @@ function HUDDisplay({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         onUpdateStats={setStats} 
         onGameOver={() => onNavigate("gameover")}
         soundEnabled={true}
+        environment={environment}
+        invertJoystickX={invertJoystickX}
       />
 
       {/* Hit damage flash overlay */}
@@ -1056,10 +1680,42 @@ function HUDDisplay({ onNavigate }: { onNavigate: (s: Screen) => void }) {
           RELOAD
         </button>
         <button
+          onClick={(e) => { e.stopPropagation(); onInvertJoystickXChange(!invertJoystickX); }}
+          className={`px-3 py-1.5 font-['Share_Tech_Mono'] text-[9px] border text-center cursor-pointer tracking-widest uppercase transition-all ${
+            invertJoystickX
+              ? "border-[#7effc0] text-[#7effc0] bg-[rgba(126,255,192,0.12)] shadow-[0_0_8px_rgba(126,255,192,0.15)]"
+              : "border-[rgba(18,64,214,0.15)] text-[#4a6080] hover:text-[#b8cce0] hover:border-[rgba(18,64,214,0.4)] bg-transparent"
+          }`}
+        >
+          INVERT X: {invertJoystickX ? "ON" : "OFF"}
+        </button>
+        <div className="flex flex-col gap-1 bg-[rgba(6,7,10,0.85)] border border-[rgba(18,64,214,0.3)] p-2 rounded-sm">
+          <div className="font-['Share_Tech_Mono'] text-[7px] text-[#4a6080] tracking-widest uppercase mb-1 text-center">LANDSCAPE</div>
+          {(["cyber", "desert", "volcano", "arctic"] as const).map((env) => (
+            <button
+              key={env}
+              onClick={(e) => { e.stopPropagation(); onEnvironmentChange(env); }}
+              className={`px-2 py-0.5 font-['Share_Tech_Mono'] text-[8px] border text-center cursor-pointer uppercase transition-all tracking-wider ${
+                environment === env
+                  ? "border-[#7effc0] text-[#7effc0] bg-[rgba(126,255,192,0.15)]"
+                  : "border-[rgba(18,64,214,0.15)] text-[#4a6080] hover:text-[#b8cce0] hover:border-[rgba(18,64,214,0.4)]"
+              }`}
+            >
+              {env}
+            </button>
+          ))}
+        </div>
+        <button
           onClick={(e) => { e.stopPropagation(); onNavigate("menu"); }}
           className="px-3 py-2 font-['Share_Tech_Mono'] text-[10px] bg-transparent border border-[rgba(18,64,214,0.2)] text-[#4a6080] hover:text-[#b8cce0] cursor-pointer tracking-widest"
         >
           MENU
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleFullscreen(); }}
+          className="px-3 py-2 font-['Share_Tech_Mono'] text-[10px] bg-transparent border border-[rgba(18,64,214,0.25)] text-[#7effc0] hover:border-[#7effc0] hover:bg-[rgba(126,255,192,0.1)] cursor-pointer tracking-widest transition-colors uppercase"
+        >
+          {isFullscreen ? "WINDOW" : "FULLSCREEN"}
         </button>
       </div>
     </div>
@@ -1193,7 +1849,17 @@ function GameOverScreen({ onNavigate }: { onNavigate: (s: Screen) => void }) {
 
 // ─── Nav overlay ─────────────────────────────────────────────────────────────
 
-function NavDots({ current, onNavigate }: { current: Screen; onNavigate: (s: Screen) => void }) {
+function NavDots({
+  current,
+  onNavigate,
+  isFullscreen,
+  onToggleFullscreen,
+}: {
+  current: Screen;
+  onNavigate: (s: Screen) => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
+}) {
   const screens: { key: Screen; label: string }[] = [
     { key: "landing", label: "LAUNCH" },
     { key: "menu", label: "MAIN MENU" },
@@ -1204,13 +1870,13 @@ function NavDots({ current, onNavigate }: { current: Screen; onNavigate: (s: Scr
   ];
 
   return (
-    <div className="absolute right-4 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-3 pointer-events-auto">
+    <div className="absolute right-4 top-1/2 -translate-y-1/2 z-50 flex flex-col gap-3 pointer-events-auto items-center">
       {screens.map((s) => (
         <button
           key={s.key}
           onClick={() => onNavigate(s.key)}
           title={s.label}
-          className="group flex items-center gap-2 cursor-pointer"
+          className="group flex items-center gap-2 cursor-pointer self-end"
         >
           <span className="hidden group-hover:block font-['Share_Tech_Mono'] text-[8px] text-[#4a6080] tracking-widest whitespace-nowrap">
             {s.label}
@@ -1224,6 +1890,17 @@ function NavDots({ current, onNavigate }: { current: Screen; onNavigate: (s: Scr
           />
         </button>
       ))}
+
+      {/* Elegant tactical fullscreen icon toggle */}
+      <div className="w-4 h-px bg-[rgba(18,64,214,0.3)] my-2" />
+      <button
+        onClick={onToggleFullscreen}
+        title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+        className="group p-1 border border-[rgba(18,64,214,0.3)] bg-[rgba(6,7,10,0.6)] text-[#4a6080] hover:text-[#7effc0] hover:border-[#7effc0] transition-all cursor-pointer flex items-center justify-center rounded-sm shadow-[0_0_8px_rgba(18,64,214,0.1)] hover:shadow-[0_0_12px_rgba(126,255,192,0.3)]"
+        style={{ width: "24px", height: "24px" }}
+      >
+        {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+      </button>
     </div>
   );
 }
@@ -1232,17 +1909,65 @@ function NavDots({ current, onNavigate }: { current: Screen; onNavigate: (s: Scr
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("landing");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [environment, setEnvironment] = useState<"cyber" | "desert" | "volcano" | "arctic">("cyber");
+  const [invertJoystickX, setInvertJoystickX] = useState<boolean>(true);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-[#06070a] font-['Exo_2']">
       {screen === "landing" && <LandingPage onEnter={() => setScreen("menu")} />}
       {screen === "menu" && <StartMenu onNavigate={setScreen} />}
-      {screen === "settings" && <SettingsMenu onBack={() => setScreen("menu")} />}
+      {screen === "settings" && (
+        <SettingsMenu
+          onBack={() => setScreen("menu")}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
+          environment={environment}
+          onEnvironmentChange={setEnvironment}
+          invertJoystickX={invertJoystickX}
+          onInvertJoystickXChange={setInvertJoystickX}
+        />
+      )}
       {screen === "controls" && <ControlsScreen onBack={() => setScreen("menu")} />}
-      {screen === "hud" && <HUDDisplay onNavigate={setScreen} />}
+      {screen === "hud" && (
+        <HUDDisplay
+          onNavigate={setScreen}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
+          environment={environment}
+          onEnvironmentChange={setEnvironment}
+          invertJoystickX={invertJoystickX}
+          onInvertJoystickXChange={setInvertJoystickX}
+        />
+      )}
       {screen === "gameover" && <GameOverScreen onNavigate={setScreen} />}
 
-      <NavDots current={screen} onNavigate={setScreen} />
+      <NavDots
+        current={screen}
+        onNavigate={setScreen}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={toggleFullscreen}
+      />
     </div>
   );
 }
