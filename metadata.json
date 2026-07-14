@@ -1,0 +1,6 @@
+{
+  "name": "Fps Style Game UI",
+  "description": "An immersive FPS-style interface with customizable user controls, a sleek HUD, and corporate-level design.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
